@@ -1,0 +1,15 @@
+---
+title: "STATS15 Final Project"
+author: "Thomas Peeler, James Cobb, Mackenzie Smith, Ciara Smith"
+output: pdf_document
+date: "2022-11-8"
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+```
+
