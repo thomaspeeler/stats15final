@@ -1,15 +1,29 @@
 ---
-title: "STATS15 Final Project"
+title: "STATS15 Final Project - FIFA Player Skills Analysis"
 author: "Thomas Peeler, James Cobb, Mackenzie Smith, Ciara Smith"
 output: pdf_document
 date: "2022-11-8"
 ---
+# Section 1: Introduction and Background
 
-```{r setup, include=FALSE, message=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+## Motivating Question
 
-```{r}
+Soccer is widely considered the most popular sport in the world, with an estimated amount of global fans in the billions. Many make life-changing money due to their skill on the field; Paris Saint-Germain player Kylian Mbappé has a projected salary of over 100 million dollars during the 2022-23 season. Ability on the field is extremely important to both fans and players alike, and with this we aim to answer the motivating question: *can we predict how the overall defending and shooting skill of a club in FIFA will change over time?*
 
-```
+## Background on FIFA and Soccer
 
+#### General Professional Soccer: 
+In soccer, a _league_ is an association made up of _clubs_, or teams, which exists to negotiate matches and competitions between those clubs. Each club can have as many players as they want, but most tend to be around 30. Unlike other sports, a player's team can change once per year via a transfer, in which one club will buy a player from another club for a negotiated amount of money.
+
+In a match, there are 11 players to each team on the field: 10 outfielders and 1 goalkeeper. Outfielders can be generally put into three categories: defenders, midfielders, and forwards. Defenders aim to keep the ball away from their own net, forwards try to get the ball to the other team's net, and midfielders take the role of either position as necessary. Forwards will generally be worse at defending than defender, and vice versa. 
+
+#### FIFA Series: 
+FIFA (aside from being a real federation) is a series of soccer video games that features many real soccer leagues, clubs, and players from all over the world. One can create their own teams or use ones that already exist to play matches against others or a computer. In the game, each soccer player has a wide range of numerical statistics; these range from specifics such as crossing and heading skill to more general stats like international recognition. FIFA games are released on a yearly basis, and these stats are also updated with each entry to the series.
+
+#### How Ratings are Collected: 
+The stats for each player are based on real life; EA, the developer of FIFA, employs many scouts to watch, in total, thousands of professional soccer matches and take notes on each player. They then report their own ratings back to EA, who use their own vetting system before implementing the ratings into the game. This process is repeated for each yearly entry of the series, in order to keep up with how players' skills and position in the soccer world can change over time.
+
+##The Data
+
+#### Structure: 
+Each observational unit is one row of the data, representing one player and their attributes for that year. Each player will have one measurement of attributes for each year
