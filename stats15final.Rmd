@@ -1,0 +1,214 @@
+---
+title: "stats15final"
+output:
+  pdf_document: default
+date: "2022-11-15"
+---
+[something something intro]
+question: what attributes affect how people treat dogs?
+analysis: for intakes, more strays and surrender=bad, for outcomes, more adoptions and rto=good
+--could possibly make "time in shelter" variable once data is cleaned using datetime?
+--attach to intake table; for each intake they spend some amt of time in shelter OR a NA for never leaving/dying??
+--transfers: 
+
+# Section 1: Background and Explanation of Data
+
+### The Austin Animal Center
+Our data looks at intakes and outcomes of animals in the Austin Animal Center, which is the primary animal shelter for Austin, TX. They accept strays and owned animals regardless of age or health, and they accept all species and breeds of animals. However, for our analysis, we will be solely looking at the intake and outcomes of dogs at the center.
+
+### Intakes and Outcomes
+An _intake_ refers to an instance of an animal being admitted to the shelter, whether it be stray or owned. An _outcome_ refers to an animal leaving the shelter for any reason, whether they are adopted, transferred to another shelter, or pass away while staying in the shelter.
+
+```{r}
+library(tidyverse)
+```
+
+First, we load our data in.
+
+```{r}
+austin_intakes <- read.csv("aac_intakes.csv")
+austin_outcomes <- read.csv("aac_outcomes.csv")
+```
+
+Then, we of course need to limit our dataset to just dogs.
+
+```{r}
+outcomes_filter <- austin_outcomes %>%
+  filter(Animal.Type=="Dog")
+intakes_filter <- austin_intakes %>% 
+  filter(Animal.Type=="Dog")
+
+outcomes_filter %>%
+  select(Age.upon.Outcome, Animal.Type, Breed) %>%
+  head()
+```
+
+Then, we need to eliminate all of the unused columns. The `Animal.Type` column will be unused since we've already filtered to just dogs.
+
+```{r}
+outcomes_s <- outcomes_filter %>%
+  select(Age.upon.Outcome, Breed, Color, DateTime, Outcome.Type)
+intakes_s <- intakes_filter %>%
+  select(Age.upon.Intake, Breed, Color, DateTime, Intake.Type)
+
+outcomes_s %>% 
+  select(Age.upon.Outcome, Breed, Color) %>%
+  head()
+```
+
+Next, the "breed" column: it currently has the problem of being a bit too specific, where some breeds are unmixed, some are just labeled "Mix" while others have the breed mix specified; this leads to well over half of the breed categories with one or two dogs in them.
+
+```{r}
+outcomes_s %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  group_by(n) %>%
+  summarise(breeds_with_n_occurances=n()) %>%
+  head()
+
+outcomes_s %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  summarise(breeds=n())
+```
+
+In order for our analysis to be a bit more useful, it will helpful to create less breed categories; we will be removing any "mix" labels and specifying all dog breeds by their primary breed.
+
+```{r}
+outcomes_b <- outcomes_s %>% 
+  mutate(Breed=str_extract(Breed, "^[A-Za-z ]+")) %>% 
+  mutate(Breed=str_replace(Breed, " Mix", ""))
+intakes_b <- intakes_s %>% 
+  mutate(Breed=str_extract(Breed, "^[A-Za-z ]+")) %>% 
+  mutate(Breed=str_replace(Breed, " Mix", ""))
+
+outcomes_b %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  group_by(n) %>%
+  summarise(breeds_with_n_occurances=n()) %>%
+  head()
+outcomes_b %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  summarise(breeds=n())
+
+outcomes_b %>%
+  select(Age.upon.Outcome, Breed, Color) %>%
+  head()
+```
+
+However, we run into a similar problem with the `Color` column.
+
+```{r}
+outcomes_b %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  group_by(n) %>%
+  summarise(colors_with_n_occurances=n()) %>%
+  head()
+
+outcomes_b %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  summarise(unique_colors=n())
+```
+
+So, we'll say that any color that shows up less than 1,000 times in the data will be simplified to be only the first word of the label. The intakes and outcomes tables are similar enough that the counts from the outcomes table will be used as the filter for both.
+
+```{r}
+col_occurances <- 
+outcomes_b %>%
+  group_by(Color) %>%
+  summarise(Color.Occurances=n())
+
+outcomes_c <-
+  outcomes_b %>%
+  left_join(col_occurances, by = "Color") %>%
+  mutate(Color=case_when(
+    Color.Occurances<1000 ~ str_extract(Color, "^[A-Za-z]+"),
+    Color.Occurances>=1000 ~ Color
+  )) %>%
+  select(-c(Color.Occurances))
+
+intakes_c <-
+  outcomes_b %>%
+  left_join(col_occurances, by = "Color") %>%
+  mutate(Color=case_when(
+    Color.Occurances<1000 ~ str_extract(Color, "^[A-Za-z]+"),
+    Color.Occurances>=1000 ~ Color
+  )) %>%
+  select(-c(Color.Occurances))
+
+outcomes_c %>% 
+  group_by(Color) %>%
+  summarise(Color.Occurances=n()) %>%
+  arrange(Color.Occurances) %>%
+  head(10)
+
+outcomes_c %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  group_by(n) %>%
+  summarise(colors_with_n_occurances=n()) %>%
+  head()
+
+outcomes_c %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  summarise(unique_colors=n())
+```
+
+While this simplifies these categories greatly, there are still a few colors that only show up once or twice. For the sake of our analysis, any color that shows up less than __ times will have all of its entries removed.
+
+```{r}
+
+```
+
+Next, note that the `Age.upon.Outcome` and `Age.upon.Intake` columns are made up of character strings at the moment
+
+```{r}
+outcomes_c %>%
+  select(Age.upon.Outcome) %>%
+  head()
+```
+
+Such a variable will be much easier to analyse as an integer, so we will convert these to integers representing the dog's age in days.
+
+```{r}
+conv_to_int <- function(string)
+{
+  conv <- data.frame(
+    c("week", "month", "year"),
+    c(7, 30, 365)
+  )
+  tmp <- 1
+  for (n in (1:3))
+  {
+     if(str_detect(string, conv[n, 1]))
+    {
+      tmp <- conv[n, 2]
+    } 
+  }
+  ret_str <- str_extract(string, "^[0-9]+")
+  ret_int <- as.integer(ret_str)
+  return(as.integer(ret_int*tmp))
+}
+
+outcomes_c$Age.Days <- map_int(outcomes_c$Age.upon.Outcome, conv_to_int)
+intakes_b$Age.Days <- map_int(intakes_b$Age.upon.Intake, conv_to_int)
+
+outcomes_a <- outcomes_c %>%
+  select(-c(Age.upon.Outcome)) %>%
+  relocate(Age.Days, .before=Breed)
+intakes_a <- intakes_b %>%
+  select(-c(Age.upon.Intake)) %>%
+  relocate(Age.Days, .before=Breed)
+         
+outcomes_a %>%
+  select(Age.Days, Breed, Color) %>%
+  head()
+```
+
+NEXT FOR CLEANING: match IDs and make new column for how long the intake lasted? dhwudwuhdwiu
+
