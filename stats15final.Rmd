@@ -17,10 +17,43 @@ analysis: for intakes, more strays and surrender=bad, for outcomes, more adoptio
 Our data looks at intakes and outcomes of animals in the Austin Animal Center, which is the primary animal shelter for Austin, TX. They accept strays and owned animals regardless of age or health, and they accept all species and breeds of animals. However, for our analysis, we will be solely looking at the intake and outcomes of dogs at the center.
 
 ### Intakes and Outcomes
-An _intake_ refers to an instance of an animal being admitted to the shelter, whether it be stray or owned. An _outcome_ refers to an animal leaving the shelter for any reason, whether they are adopted, transferred to another shelter, or pass away while staying in the shelter.
+An _intake_ refers to an instance of an animal being admitted to the shelter, whether it be stray or owned. An _outcome_ refers to an animal leaving the shelter for any reason, whether they are adopted, transferred to another shelter, or pass away while staying in the shelter. Our data consists of two separate tables, one detailing outcomes and one detailing intakes. Each animal has a unique ID that is shared between the two tables.
+
+## Variables
+
++ Note: the variables in the intakes/outcomes tables are very similar but are all described separately here for the sake of clarity
+
+### Explanatory Variables: Intakes Table
+
+***Age.upon.Intake***: (char) the dog’s age at the time of the intake; an estimate if the dog is a rescue
+
+***Breed***: (char) the dog’s primary and secondary breed (if it has one)
+
+***Color***: (char) the dog’s primary and secondary color (if it has one); the one/two main colors that make up its coat
+
+***DateTime***: (char) the date and time of the intake
+
+### Explanatory Variables: Outcomes Table
+
+***Age.upon.Outcome***: (char) the dog’s age at the time of the outcome; an estimate if the dog is a rescue
+
+***Breed***: (char) the dog’s primary and secondary breed (if it has one)
+
+***Color***: (char) the dog’s primary and secondary color (if it has one)
+
+***DateTime***: (char) the date and time of the outcome
+
+### Response Variables
+
+***Outcome.Type***: (char)  the specifics of the outcome situation for the dog, ex: adoption, returned to owner, transferred to rescue shelter
+
+***Intake.Type***: (char)  the specifics of the intake situation for the dog, ex: stray, owner surrender, public assistance (brought in by outside rescue org)
+
+# Section 2: Data Loading, Cleaning, and Modifying
 
 ```{r}
 library(tidyverse)
+library(ggplot2)
 ```
 
 First, we load our data in.
@@ -47,24 +80,31 @@ Then, we need to eliminate all of the unused columns. The `Animal.Type` column w
 
 ```{r}
 outcomes_s <- outcomes_filter %>%
-  select(Age.upon.Outcome, Breed, Color, DateTime, Outcome.Type)
+  select(Animal.ID, Age.upon.Outcome, Breed, Color, DateTime, Outcome.Type)
 intakes_s <- intakes_filter %>%
-  select(Age.upon.Intake, Breed, Color, DateTime, Intake.Type)
+  select(Animal.ID, Age.upon.Intake, Breed, Color, DateTime, Intake.Type)
 
 outcomes_s %>% 
   select(Age.upon.Outcome, Breed, Color) %>%
   head()
 ```
 
-Next, the "breed" column: it currently has the problem of being a bit too specific, where some breeds are unmixed, some are just labeled "Mix" while others have the breed mix specified; this leads to well over half of the breed categories with one or two dogs in them.
+Next, we need to check for any duplicate entries. [TODO]
+
+```{r}
+
+```
+
+Next, the "breed" column: it currently has the problem of being a bit too specific, where some breeds are unmixed, some are just labeled "Mix" while others have the breed mix specified, among other naming specifics; this leads to a large majority of the breed categories having <10 entries.
 
 ```{r}
 outcomes_s %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
-  group_by(n) %>%
-  summarise(breeds_with_n_occurances=n()) %>%
-  head()
+  ggplot(aes(x=n)) +
+  geom_density(fill="light blue") +
+  scale_x_log10() +
+  xlab("Occurances of each unique breed in data")
 
 outcomes_s %>%
   group_by(Breed) %>%
@@ -85,9 +125,11 @@ intakes_b <- intakes_s %>%
 outcomes_b %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
-  group_by(n) %>%
-  summarise(breeds_with_n_occurances=n()) %>%
-  head()
+  ggplot(aes(x=n)) +
+  geom_density(fill="light blue") +
+  scale_x_log10() +
+  xlab("Occurances of each unique breed in data")
+
 outcomes_b %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
@@ -104,9 +146,11 @@ However, we run into a similar problem with the `Color` column.
 outcomes_b %>%
   group_by(Color) %>%
   summarise(n=n()) %>%
-  group_by(n) %>%
-  summarise(colors_with_n_occurances=n()) %>%
-  head()
+  ggplot(aes(x=n)) +
+  geom_density(fill="light blue") +
+  #geom_histogram(bins=20, fill="light blue", color="black") +
+  scale_x_log10() +
+  xlab("Occurances of each unique color in data")
 
 outcomes_b %>%
   group_by(Color) %>%
@@ -114,7 +158,7 @@ outcomes_b %>%
   summarise(unique_colors=n())
 ```
 
-So, we'll say that any color that shows up less than 1,000 times in the data will be simplified to be only the first word of the label. The intakes and outcomes tables are similar enough that the counts from the outcomes table will be used as the filter for both.
+So, we'll say that any color that makes up less than 1/100th of the data (in other words, less than 800 occurances)will be simplified to be only the first word of the label. The intakes and outcomes tables are similar enough that the counts from the outcomes table will be used as the filter for both.
 
 ```{r}
 col_occurances <- 
@@ -126,8 +170,8 @@ outcomes_c <-
   outcomes_b %>%
   left_join(col_occurances, by = "Color") %>%
   mutate(Color=case_when(
-    Color.Occurances<1000 ~ str_extract(Color, "^[A-Za-z]+"),
-    Color.Occurances>=1000 ~ Color
+    Color.Occurances<800 ~ str_extract(Color, "^[A-Za-z]+"),
+    Color.Occurances>=800 ~ Color
   )) %>%
   select(-c(Color.Occurances))
 
@@ -135,34 +179,27 @@ intakes_c <-
   outcomes_b %>%
   left_join(col_occurances, by = "Color") %>%
   mutate(Color=case_when(
-    Color.Occurances<1000 ~ str_extract(Color, "^[A-Za-z]+"),
-    Color.Occurances>=1000 ~ Color
+    Color.Occurances<800 ~ str_extract(Color, "^[A-Za-z]+"),
+    Color.Occurances>=800 ~ Color
   )) %>%
   select(-c(Color.Occurances))
-
-outcomes_c %>% 
-  group_by(Color) %>%
-  summarise(Color.Occurances=n()) %>%
-  arrange(Color.Occurances) %>%
-  head(10)
 
 outcomes_c %>%
   group_by(Color) %>%
   summarise(n=n()) %>%
-  group_by(n) %>%
-  summarise(colors_with_n_occurances=n()) %>%
-  head()
+  ggplot(aes(x=n)) +
+  geom_density(fill="light blue") +
+  scale_x_log10() +
+  xlab("Occurances of each unique color in data")
 
 outcomes_c %>%
   group_by(Color) %>%
   summarise(n=n()) %>%
   summarise(unique_colors=n())
-```
 
-While this simplifies these categories greatly, there are still a few colors that only show up once or twice. For the sake of our analysis, any color that shows up less than __ times will have all of its entries removed.
-
-```{r}
-
+outcomes_c %>%
+  select(Age.upon.Outcome, Breed, Color) %>%
+  head()
 ```
 
 Next, note that the `Age.upon.Outcome` and `Age.upon.Intake` columns are made up of character strings at the moment
@@ -210,5 +247,13 @@ outcomes_a %>%
   head()
 ```
 
-NEXT FOR CLEANING: match IDs and make new column for how long the intake lasted? dhwudwuhdwiu
+
+That will be all for the cleaning of the data, but we will be modifying and adding an additional column to the intakes table.
+
+
+Note how each animal has a unique ID that is shared across both tables, and additionally, how the specific date and time is given for each intake and outcome. We will be using these in tandem to create a new column for the intakes table that denotes how long each specific intake lasted. For intakes that ended in a death or do not have a corresponding outcome, they will have an NA entry in our new column.
+
+```{r}
+
+```
 
