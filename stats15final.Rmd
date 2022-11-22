@@ -324,6 +324,11 @@ aac_a %>%
 
 ```{r}
 #note: not to bring up problems without fixing them buttttttttttttt there are some dogs that have been in and out of the shelter like >40 times, and when analysing for adoption rates i feel like entries like that really muddy the waters. maybe its all relative and like we are only comparing dogs in the table against each other so it doesnt matter too much but idk. it might be a good idea to look at each animal ID separately and make a column for if each animal was every adopted even once and use that for analysis when looking at adoption vs breed or color or age. idk this is a problem for future me
+
+#IDEAS FOR EXPLORATORY ANALYSIS GRAPHS TO DO:
+#bar graphs with explanatory var on x (breed, color, age, etc) and stacked bars with adoption and non-adoption outcomes or adopted and non-adopted dogs
+#look at distribution of age and time between actions
+#more ideas here
 ```
 
 
