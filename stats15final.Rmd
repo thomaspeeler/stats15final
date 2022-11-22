@@ -6,10 +6,15 @@ date: "2022-11-15"
 ---
 FEEL FREE TO CHANGE ANYTHING UP HERE IN THE INTRODUCTION
 
-IMPORTANT: WHEN PUSHING TO GITHUB, DONT PUSH TO MAIN!!!!! MAKE A BRANCH!!!
+IMPORTANT: WHEN PUSHING TO GITHUB, DONT COMMIT TO MAIN!!!!! MAKE A BRANCH!!!
 IF YOU DONT KNOW HOW, READ HERE: https://docs.github.com/en/get-started/quickstart/github-flow
 
+---------------------------------------
+
 # Section 1: Background and Explanation of Data
+
+[intro here]
+Motivating Question: What attributes affect whether a dog gets adopted?
 
 ### The Austin Animal Center
 Our data looks at intakes and outcomes of animals in the Austin Animal Center, which is the primary animal shelter for Austin, TX. They accept strays and owned animals regardless of age or health, and they accept all species and breeds of animals. However, for our analysis, we will be solely looking at the intake and outcomes of dogs at the center.
@@ -81,7 +86,7 @@ outcomes_s %>%
   head()
 ```
 
-Then, we'll be binding the two tables together for the sake of analysis and easier cleaning. An extra column will be added that will specify if each entry is an outcome/intake.
+Then, we'll be binding the two tables together for the sake of analysis. An extra column will be added that will specify if each entry is an outcome/intake.
 
 ```{r}
 o1 <- outcomes_s %>%
@@ -123,7 +128,7 @@ aac_d %>%
   head()
 ```
 
-To help with this part of the cleaning, we'll be adding a column that will specify how long each intake/outcome lasted (in seconds) until the next one for each animal. for the first intake/outcome, an NA will be in the column.
+To help with this part of the cleaning, we'll be adding a column that will specify how long each intake/outcome lasted (in seconds) until the next one for each animal. For the first intake/outcome for an animal, an NA will be in the column.
 
 ```{r}
 len <- function(d1, d2)
@@ -143,7 +148,8 @@ aac_d %>%
   ))
 
 aac_dd %>%
-  select(Animal.ID, Action, time_from_last_action)
+  select(Animal.ID, Action, time_from_last_action) %>%
+  head()
 ```
 
 With that, we can simply remove all cases of duplicate entries (i.e. the time from the last action is 0 and it is the same action as the last)
@@ -160,9 +166,10 @@ aac_f %>%
   nrow()
 ```
 
-Now, there are only 69 "consecutive" entries left after filtering; that is to say, 69 entries that are an `outcome` right after an `outcomes` or an `intake` right after an `intake`. Seeing as our table has over 160,000 entries at the moment, just for the sake of analysis, we will be simply removing these entries from the table.
+Now, there are only 69 "consecutive" entries left after filtering; that is to say, 69 entries that are an `outcome` right after an `outcome` or an `intake` right after an `intake` in the `Action` column. Seeing as our table has over 160,000 entries at the moment, just for the sake of analysis, we will be simply removing these entries from the table.
 
 ```{r}
+#11/21 NOTE: I DONT KNOW IF THIS IS THE RIGHT THING TO DO; NEED TO ASK MILES ABT IT
 aac_r <-
   aac_f  %>%
   filter(!(Consecutive)) %>%
@@ -233,6 +240,12 @@ So, we'll say that any color that makes up less than 1/100th of the data (in oth
 ```{r}
 #BIG NOTE: hes defeinitely going to want better justification for the 1/100th figure, and we can certainly change that number but idk what to change it to and like how to justify it but ill figure it out eventually
 
+#maybe we just do the same thing we did for the breed column and just do the main color? i was hesitant of that bc the most common color is "black/white," and lumping in the most common with other colors seemed off idk
+
+#the way that we have it right now causes a massive spike in the density plot around 1600 occurances which seems like a problem so theres a very high chance this part will change a lot tbh
+
+#honestly the solution might just be to not change it at all ugh
+
 col_occurances <- 
 aac_b %>%
   group_by(Color) %>%
@@ -296,7 +309,7 @@ conv_to_int <- function(string)
 }
 
 aac_c$Age.Days <- map_int(aac_c$Age, conv_to_int)
-#look i know this is slow but fuck it i made it and it works
+#look i know this is slow but like whatever right??? it works idc im so tired why isnt it winter break yet
 
 aac_a <- aac_c %>%
   select(-c(Age)) %>%
@@ -306,3 +319,11 @@ aac_a %>%
   select(Age.Days, Breed, Color) %>%
   head()
 ```
+
+
+
+```{r}
+#note: not to bring up problems without fixing them buttttttttttttt there are some dogs that have been in and out of the shelter like >40 times, and when analysing for adoption rates i feel like entries like that really muddy the waters. maybe its all relative and like we are only comparing dogs in the table against each other so it doesnt matter too much but idk. it might be a good idea to look at each animal ID separately and make a column for if each animal was every adopted even once and use that for analysis when looking at adoption vs breed or color or age. idk this is a problem for future me
+```
+
+
