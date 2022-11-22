@@ -4,12 +4,10 @@ output:
   pdf_document: default
 date: "2022-11-15"
 ---
-[something something intro]
-question: what attributes affect how people treat dogs?
-analysis: for intakes, more strays and surrender=bad, for outcomes, more adoptions and rto=good
---could possibly make "time in shelter" variable once data is cleaned using datetime?
---attach to intake table; for each intake they spend some amt of time in shelter OR a NA for never leaving/dying??
---transfers: 
+FEEL FREE TO CHANGE ANYTHING UP HERE IN THE INTRODUCTION
+
+IMPORTANT: WHEN PUSHING TO GITHUB, DONT PUSH TO MAIN!!!!! MAKE A BRANCH!!!
+IF YOU DONT KNOW HOW, READ HERE: https://docs.github.com/en/get-started/quickstart/github-flow
 
 # Section 1: Background and Explanation of Data
 
@@ -21,39 +19,33 @@ An _intake_ refers to an instance of an animal being admitted to the shelter, wh
 
 ## Variables
 
-+ Note: the variables in the intakes/outcomes tables are very similar but are all described separately here for the sake of clarity
++ Note: the variables started off as being in two separate tables, but they are binded together during cleaning
 
-### Explanatory Variables: Intakes Table
+### Explanatory Variables
 
-***Age.upon.Intake***: (char) the dog’s age at the time of the intake; an estimate if the dog is a rescue
+***Age***: (char) the dog’s age at the time of the intake/outcome; an estimate if the dog is a rescue
 
 ***Breed***: (char) the dog’s primary and secondary breed (if it has one)
 
 ***Color***: (char) the dog’s primary and secondary color (if it has one); the one/two main colors that make up its coat
 
-***DateTime***: (char) the date and time of the intake
+***DateTime***: (char) the date and time of the intake/outcome
 
-### Explanatory Variables: Outcomes Table
+### Response Variable
 
-***Age.upon.Outcome***: (char) the dog’s age at the time of the outcome; an estimate if the dog is a rescue
+***Type***: (char)  the specifics of the intake/outcome situation for the dog,
+ex: 
 
-***Breed***: (char) the dog’s primary and secondary breed (if it has one)
+outcomes: adoption, returned to owner, transferred to another shelter
 
-***Color***: (char) the dog’s primary and secondary color (if it has one)
-
-***DateTime***: (char) the date and time of the outcome
-
-### Response Variables
-
-***Outcome.Type***: (char)  the specifics of the outcome situation for the dog, ex: adoption, returned to owner, transferred to rescue shelter
-
-***Intake.Type***: (char)  the specifics of the intake situation for the dog, ex: stray, owner surrender, public assistance (brought in by outside rescue org)
+intakes: stray, owner surrender, public assistance (outside rescue org)
 
 # Section 2: Data Loading, Cleaning, and Modifying
 
 ```{r}
 library(tidyverse)
 library(ggplot2)
+library(lubridate)
 ```
 
 First, we load our data in.
@@ -89,16 +81,98 @@ outcomes_s %>%
   head()
 ```
 
-Next, we need to check for any duplicate entries. [TODO]
+Then, we'll be binding the two tables together for the sake of analysis and easier cleaning. An extra column will be added that will specify if each entry is an outcome/intake.
 
 ```{r}
+o1 <- outcomes_s %>%
+  rename("Age"="Age.upon.Outcome",
+         "Type"="Outcome.Type")
+o1$Action <- "outcome"
 
+i1 <- intakes_s %>%
+  rename("Age"="Age.upon.Intake",
+         "Type"="Intake.Type")
+i1$Action <- "intake"
+
+aac_b <- rbind(o1, i1) %>% arrange(Animal.ID)
+aac_b %>%
+  select(Age, Breed, Color) %>%
+  head()
+```
+
+
+Nex
+
+First, we we'll use `lubridate` to add a column for all of the `DateTime` values converted to `date` objects, which will make it easier to compare them.
+
+```{r}
+aac_d <- aac_b
+aac_d$DateTime <- mdy_hms(aac_d$DateTime)
+
+aac_d %>% 
+  select(Age, Breed, DateTime) %>%
+  head()
+```
+
+Then, we'll need to do some more careful combing of the data; we'll need to see which animals had intakes/outcomes occur one after the other, without alternating (basically, having two outcomes or two intakes in a row is unusual but it is present in the data)
+
+```{r}
+aac_d %>%
+  arrange(Animal.ID, DateTime) %>%
+  select(Animal.ID, Action, DateTime, Type) %>%
+  head()
+```
+
+To help with this part of the cleaning, we'll be adding a column that will specify how long each intake/outcome lasted (in seconds) until the next one for each animal. for the first intake/outcome, an NA will be in the column.
+
+```{r}
+len <- function(d1, d2)
+{
+  retval <- int_length(interval(d1, d2))
+  return(retval)
+}
+
+aac_dd <-
+aac_d %>%
+  arrange(Animal.ID, DateTime) %>%
+  group_by(Animal.ID) %>%
+  mutate(num_action=row_number()) %>%
+  ungroup() %>%
+  mutate(time_from_last_action=case_when(
+    (num_action > 1) ~ len(lag(DateTime), DateTime)
+  ))
+
+aac_dd %>%
+  select(Animal.ID, Action, time_from_last_action)
+```
+
+With that, we can simply remove all cases of duplicate entries (i.e. the time from the last action is 0 and it is the same action as the last)
+
+```{r}
+aac_f <-
+  aac_dd %>%
+  filter((time_from_last_action!=0) | (lag(Action)!=Action) | num_action==1) %>%
+  arrange(Animal.ID, DateTime) %>%
+  mutate(Consecutive=((lag(Action)==Action) & (num_action!=1)))
+
+aac_f %>%
+  filter(Consecutive) %>%
+  nrow()
+```
+
+Now, there are only 69 "consecutive" entries left after filtering; that is to say, 69 entries that are an `outcome` right after an `outcomes` or an `intake` right after an `intake`. Seeing as our table has over 160,000 entries at the moment, just for the sake of analysis, we will be simply removing these entries from the table.
+
+```{r}
+aac_r <-
+  aac_f  %>%
+  filter(!(Consecutive)) %>%
+  select(-c(Consecutive, num_action))
 ```
 
 Next, the "breed" column: it currently has the problem of being a bit too specific, where some breeds are unmixed, some are just labeled "Mix" while others have the breed mix specified, among other naming specifics; this leads to a large majority of the breed categories having <10 entries.
 
 ```{r}
-outcomes_s %>%
+aac_r %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   ggplot(aes(x=n)) +
@@ -106,7 +180,7 @@ outcomes_s %>%
   scale_x_log10() +
   xlab("Occurances of each unique breed in data")
 
-outcomes_s %>%
+aac_r %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   summarise(breeds=n())
@@ -115,14 +189,11 @@ outcomes_s %>%
 In order for our analysis to be a bit more useful, it will helpful to create less breed categories; we will be removing any "mix" labels and specifying all dog breeds by their primary breed.
 
 ```{r}
-outcomes_b <- outcomes_s %>% 
-  mutate(Breed=str_extract(Breed, "^[A-Za-z ]+")) %>% 
-  mutate(Breed=str_replace(Breed, " Mix", ""))
-intakes_b <- intakes_s %>% 
+aac_b <- aac_r %>% 
   mutate(Breed=str_extract(Breed, "^[A-Za-z ]+")) %>% 
   mutate(Breed=str_replace(Breed, " Mix", ""))
 
-outcomes_b %>%
+aac_b %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   ggplot(aes(x=n)) +
@@ -130,61 +201,53 @@ outcomes_b %>%
   scale_x_log10() +
   xlab("Occurances of each unique breed in data")
 
-outcomes_b %>%
+aac_b %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   summarise(breeds=n())
 
-outcomes_b %>%
-  select(Age.upon.Outcome, Breed, Color) %>%
+aac_b %>%
+  select(Age, Breed, Color) %>%
   head()
 ```
 
 However, we run into a similar problem with the `Color` column.
 
 ```{r}
-outcomes_b %>%
+aac_b %>%
   group_by(Color) %>%
   summarise(n=n()) %>%
   ggplot(aes(x=n)) +
   geom_density(fill="light blue") +
-  #geom_histogram(bins=20, fill="light blue", color="black") +
   scale_x_log10() +
   xlab("Occurances of each unique color in data")
 
-outcomes_b %>%
+aac_b %>%
   group_by(Color) %>%
   summarise(n=n()) %>%
   summarise(unique_colors=n())
 ```
 
-So, we'll say that any color that makes up less than 1/100th of the data (in other words, less than 800 occurances)will be simplified to be only the first word of the label. The intakes and outcomes tables are similar enough that the counts from the outcomes table will be used as the filter for both.
+So, we'll say that any color that makes up less than 1/100th of the data (in other words, less than 1600 occurrences)will be simplified to be only the first word of the label. The intakes and outcomes tables are similar enough that the counts from the outcomes table will be used as the filter for both.
 
 ```{r}
+#BIG NOTE: hes defeinitely going to want better justification for the 1/100th figure, and we can certainly change that number but idk what to change it to and like how to justify it but ill figure it out eventually
+
 col_occurances <- 
-outcomes_b %>%
+aac_b %>%
   group_by(Color) %>%
   summarise(Color.Occurances=n())
 
-outcomes_c <-
-  outcomes_b %>%
+aac_c <-
+  aac_b %>%
   left_join(col_occurances, by = "Color") %>%
   mutate(Color=case_when(
-    Color.Occurances<800 ~ str_extract(Color, "^[A-Za-z]+"),
-    Color.Occurances>=800 ~ Color
+    Color.Occurances<1600 ~ str_extract(Color, "^[A-Za-z]+"),
+    Color.Occurances>=1600 ~ Color
   )) %>%
   select(-c(Color.Occurances))
 
-intakes_c <-
-  outcomes_b %>%
-  left_join(col_occurances, by = "Color") %>%
-  mutate(Color=case_when(
-    Color.Occurances<800 ~ str_extract(Color, "^[A-Za-z]+"),
-    Color.Occurances>=800 ~ Color
-  )) %>%
-  select(-c(Color.Occurances))
-
-outcomes_c %>%
+aac_c %>%
   group_by(Color) %>%
   summarise(n=n()) %>%
   ggplot(aes(x=n)) +
@@ -192,21 +255,21 @@ outcomes_c %>%
   scale_x_log10() +
   xlab("Occurances of each unique color in data")
 
-outcomes_c %>%
+aac_c %>%
   group_by(Color) %>%
   summarise(n=n()) %>%
   summarise(unique_colors=n())
 
-outcomes_c %>%
-  select(Age.upon.Outcome, Breed, Color) %>%
+aac_c %>%
+  select(Age, Breed, Color) %>%
   head()
 ```
 
-Next, note that the `Age.upon.Outcome` and `Age.upon.Intake` columns are made up of character strings at the moment
+Next, note that the `Age` column is made up of character strings at the moment
 
 ```{r}
-outcomes_c %>%
-  select(Age.upon.Outcome) %>%
+aac_c %>%
+  select(Age) %>%
   head()
 ```
 
@@ -232,28 +295,14 @@ conv_to_int <- function(string)
   return(as.integer(ret_int*tmp))
 }
 
-outcomes_c$Age.Days <- map_int(outcomes_c$Age.upon.Outcome, conv_to_int)
-intakes_b$Age.Days <- map_int(intakes_b$Age.upon.Intake, conv_to_int)
+aac_c$Age.Days <- map_int(aac_c$Age, conv_to_int)
+#look i know this is slow but fuck it i made it and it works
 
-outcomes_a <- outcomes_c %>%
-  select(-c(Age.upon.Outcome)) %>%
-  relocate(Age.Days, .before=Breed)
-intakes_a <- intakes_b %>%
-  select(-c(Age.upon.Intake)) %>%
+aac_a <- aac_c %>%
+  select(-c(Age)) %>%
   relocate(Age.Days, .before=Breed)
          
-outcomes_a %>%
+aac_a %>%
   select(Age.Days, Breed, Color) %>%
   head()
 ```
-
-
-That will be all for the cleaning of the data, but we will be modifying and adding an additional column to the intakes table.
-
-
-Note how each animal has a unique ID that is shared across both tables, and additionally, how the specific date and time is given for each intake and outcome. We will be using these in tandem to create a new column for the intakes table that denotes how long each specific intake lasted. For intakes that ended in a death or do not have a corresponding outcome, they will have an NA entry in our new column.
-
-```{r}
-
-```
-
