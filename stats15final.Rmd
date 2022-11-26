@@ -2,7 +2,7 @@
 title: "stats15final"
 output:
   pdf_document: default
-date: "2022-11-15"
+date: "2022-12-08"
 ---
 FEEL FREE TO CHANGE ANYTHING UP HERE IN THE INTRODUCTION
 
@@ -13,44 +13,57 @@ IF YOU DONT KNOW HOW, READ HERE: https://docs.github.com/en/get-started/quicksta
 
 # Section 1: Background and Explanation of Data
 
-[intro here]
-Motivating Question: What attributes affect whether a dog gets adopted?
+## Introduction and Motivating Question
+
+In the United States alone, 6.5 million dogs, cats, and other former pets are abandoned or lost every year and end up in shelters. In reality, only 3.2 million of these animals are adopted, while others who are not adopted within a certain time frame are euthanized. The Austin Animal Center, however, objects to this quota by being the largest no-kill animal shelter in the United States and providing care and shelter to over 18,000 animals each year. In contrast to other shelters, the animals that are not adopted within a certain time period are either transferred, returned to their original owner, and in very rare cases, euthanized. In this project, we will seek to answer the motivating question: what attributes affect whether a dog is adopted?
+
+## Background
 
 ### The Austin Animal Center
-Our data looks at intakes and outcomes of animals in the Austin Animal Center, which is the primary animal shelter for Austin, TX. They accept strays and owned animals regardless of age or health, and they accept all species and breeds of animals. However, for our analysis, we will be solely looking at the intake and outcomes of dogs at the center.
+The Austin Animal Center is the largest no-kill animal shelter in the United States that provides care and shelter to over 18,000 animals annually. They accept strays and owned animals regardless of age or health, and they accept all species and breeds of animals. However, for our analysis, we will be solely looking at the intake and outcomes of dogs at the center. As part of the AAC's efforts to help and care for animals in need, the organization makes available its accumulated data and statistics as part of the city of Austin's Open Data Initiative. The AAC datasets that we will be analysing outline the intakes and outcomes of animals at the center, of which many happen each day.
 
 ### Intakes and Outcomes
 An _intake_ refers to an instance of an animal being admitted to the shelter, whether it be stray or owned. An _outcome_ refers to an animal leaving the shelter for any reason, whether they are adopted, transferred to another shelter, or pass away while staying in the shelter. Our data consists of two separate tables, one detailing outcomes and one detailing intakes. Each animal has a unique ID that is shared between the two tables.
 
+### How Animals Come Into the Shelter
+Some are brought in by owners who can no longer keep the animals. Others are found roaming the streets and brought in by animal control officers. In an ideal situation, an animal will only stay in a shelter until its owner returns or it is adopted. However, if that is not the case and they don't have enough room to indefinitely house all of the animals they receive, they will transfer them to a partner location.
+
+### Data Structure
+The intakes table has one entry for each instance of an animal coming into the shelter, and the outcomes table has one entry for each instance of an animal leaving the shelter. Each entry has details about the intake and outcome situations for the animals, which are specified in the "Variables" section. In our dataset, we will only be looking at dogs. Before any cleaning, the intakes and outcomes tables had a total of 145,851 entries and 145,914 entries, respectively, with 12 variables each.
+
+### Importance of the Data
+The importance of this data lies in the fact that it not only identifies characteristics people are looking for in dogs but also helps shelters that house dogs of all kinds decide whether to keep animals that exhibit certain characteristics at their current location or move them to a shelter that specializes in such characteristics. Suppose an elderly dog was staying at a shelter that couldn't get adopted due to a trend of people not adopting elderly dogs. If this was the case, the shelter might be better off transferring the dog to a shelter that is specifically designed for elderly dogs, where people looking to adopt elderly dogs are more likely to adopt the dog.
+
+
 ## Variables
 
-+ Note: the variables started off as being in two separate tables, but they are binded together during cleaning
++ Note: the variables started off as being in two separate tables, but the tables will be binded together during cleaning
 
 ### Explanatory Variables
 
-***Age***: (char) the dog’s age at the time of the intake/outcome; an estimate if the dog is a rescue
+***Age.upon.Intake*** and ***Age.upon.Outcome***: (char) the dog’s age at the time of the intake/outcome; an estimate if the dog is a rescue
 
 ***Breed***: (char) the dog’s primary and secondary breed (if it has one)
 
-***Color***: (char) the dog’s primary and secondary color (if it has one); the one/two main colors that make up its coat
+***Color***: (char) the dog’s primary and secondary color (if it has one); the one or two main colors that make up its coat
 
 ***DateTime***: (char) the date and time of the intake/outcome
 
 ### Response Variable
 
-***Type***: (char)  the specifics of the intake/outcome situation for the dog,
-ex: 
+***Intake.Type*** and ***Outcome.Type***: (char)  the specifics of the intake/outcome situation for the dog, which are: 
 
-outcomes: adoption, returned to owner, transferred to another shelter
+outcomes: Adoption, Return to Owner, Transfer (moved to a rescue shelter), Euthanasia, Rto-Adopt (returned to the original owner through the adopotion process), Died, Disposal (same as died), Missing (the dog was lost at the center), and Stolen
 
-intakes: stray, owner surrender, public assistance (outside rescue org)
+intakes: Stray, Owner Surrender, Public Assist (the dog was brought to the shelter by an outside rescue org), Abandoned (there was a confirmed past owner that has abandoned the dog), Euthanasia Request (from the owner or otherwise), and Wildlife (same as stray)
 
-# Section 2: Data Loading, Cleaning, and Modifying
+# Section 2: Data Loading and Cleaning
 
-```{r}
+```{r, message=FALSE, echo=FALSE}
 library(tidyverse)
 library(ggplot2)
 library(lubridate)
+library(forcats)
 ```
 
 First, we load our data in.
@@ -105,184 +118,38 @@ aac_b %>%
   head()
 ```
 
+Now, there is some cleaning to do in the `Type` column: some outcome/intake types are very similar to each other, and it will make more sense for our analysis if we lump them all together. Specifically, 
 
-Nex
-
-First, we we'll use `lubridate` to add a column for all of the `DateTime` values converted to `date` objects, which will make it easier to compare them.
++ `Rto-Adopt` is the same as `Return to Owner`
++ `Wildlife` and `Abandoned` are the same as `Stray`
++ `Disposal` is the same as `Died`
++ `Stolen` is the same as `Lost`.
 
 ```{r}
-aac_d <- aac_b
+aac_t <-
+  aac_b %>%
+  mutate(Type=case_when(
+    Type=="Rto-Adopt" ~ "Return to Owner",
+    Type=="Stolen" ~ "Lost",
+    Type=="Disposal" ~ "Died",
+    Type %in% c("Wildlife", "Abandoned") ~ "Stray"
+  ))
+```
+
+Then, we'll use `lubridate` to add a column for all of the `DateTime` values converted to `date` instead of `char` objects, which will make it easier to compare them.
+
+```{r}
+aac_d <- aac_t
 aac_d$DateTime <- mdy_hms(aac_d$DateTime)
 
-aac_d %>% 
-  select(Age, Breed, DateTime) %>%
-  head()
+aac_d$DateTime %>%
+  head(3)
 ```
 
-Then, we'll need to do some more careful combing of the data; we'll need to see which animals had intakes/outcomes occur one after the other, without alternating (basically, having two outcomes or two intakes in a row is unusual but it is present in the data)
+Next, note that the `Age` column is made up of character strings at the moment.
 
 ```{r}
-aac_d %>%
-  arrange(Animal.ID, DateTime) %>%
-  select(Animal.ID, Action, DateTime, Type) %>%
-  head()
-```
-
-To help with this part of the cleaning, we'll be adding a column that will specify how long each intake/outcome lasted (in seconds) until the next one for each animal. For the first intake/outcome for an animal, an NA will be in the column.
-
-```{r}
-len <- function(d1, d2)
-{
-  retval <- int_length(interval(d1, d2))
-  return(retval)
-}
-
-aac_dd <-
-aac_d %>%
-  arrange(Animal.ID, DateTime) %>%
-  group_by(Animal.ID) %>%
-  mutate(num_action=row_number()) %>%
-  ungroup() %>%
-  mutate(time_from_last_action=case_when(
-    (num_action > 1) ~ len(lag(DateTime), DateTime)
-  ))
-
-aac_dd %>%
-  select(Animal.ID, Action, time_from_last_action) %>%
-  head()
-```
-
-With that, we can simply remove all cases of duplicate entries (i.e. the time from the last action is 0 and it is the same action as the last)
-
-```{r}
-aac_f <-
-  aac_dd %>%
-  filter((time_from_last_action!=0) | (lag(Action)!=Action) | num_action==1) %>%
-  arrange(Animal.ID, DateTime) %>%
-  mutate(Consecutive=((lag(Action)==Action) & (num_action!=1)))
-
-aac_f %>%
-  filter(Consecutive) %>%
-  nrow()
-```
-
-Now, there are only 69 "consecutive" entries left after filtering; that is to say, 69 entries that are an `outcome` right after an `outcome` or an `intake` right after an `intake` in the `Action` column. Seeing as our table has over 160,000 entries at the moment, just for the sake of analysis, we will be simply removing these entries from the table.
-
-```{r}
-#11/21 NOTE: I DONT KNOW IF THIS IS THE RIGHT THING TO DO; NEED TO ASK MILES ABT IT
-aac_r <-
-  aac_f  %>%
-  filter(!(Consecutive)) %>%
-  select(-c(Consecutive, num_action))
-```
-
-Next, the "breed" column: it currently has the problem of being a bit too specific, where some breeds are unmixed, some are just labeled "Mix" while others have the breed mix specified, among other naming specifics; this leads to a large majority of the breed categories having <10 entries.
-
-```{r}
-aac_r %>%
-  group_by(Breed) %>%
-  summarise(n=n()) %>%
-  ggplot(aes(x=n)) +
-  geom_density(fill="light blue") +
-  scale_x_log10() +
-  xlab("Occurances of each unique breed in data")
-
-aac_r %>%
-  group_by(Breed) %>%
-  summarise(n=n()) %>%
-  summarise(breeds=n())
-```
-
-In order for our analysis to be a bit more useful, it will helpful to create less breed categories; we will be removing any "mix" labels and specifying all dog breeds by their primary breed.
-
-```{r}
-aac_b <- aac_r %>% 
-  mutate(Breed=str_extract(Breed, "^[A-Za-z ]+")) %>% 
-  mutate(Breed=str_replace(Breed, " Mix", ""))
-
-aac_b %>%
-  group_by(Breed) %>%
-  summarise(n=n()) %>%
-  ggplot(aes(x=n)) +
-  geom_density(fill="light blue") +
-  scale_x_log10() +
-  xlab("Occurances of each unique breed in data")
-
-aac_b %>%
-  group_by(Breed) %>%
-  summarise(n=n()) %>%
-  summarise(breeds=n())
-
-aac_b %>%
-  select(Age, Breed, Color) %>%
-  head()
-```
-
-However, we run into a similar problem with the `Color` column.
-
-```{r}
-aac_b %>%
-  group_by(Color) %>%
-  summarise(n=n()) %>%
-  ggplot(aes(x=n)) +
-  geom_density(fill="light blue") +
-  scale_x_log10() +
-  xlab("Occurances of each unique color in data")
-
-aac_b %>%
-  group_by(Color) %>%
-  summarise(n=n()) %>%
-  summarise(unique_colors=n())
-```
-
-So, we'll say that any color that makes up less than 1/100th of the data (in other words, less than 1600 occurrences)will be simplified to be only the first word of the label. The intakes and outcomes tables are similar enough that the counts from the outcomes table will be used as the filter for both.
-
-```{r}
-#BIG NOTE: hes defeinitely going to want better justification for the 1/100th figure, and we can certainly change that number but idk what to change it to and like how to justify it but ill figure it out eventually
-
-#maybe we just do the same thing we did for the breed column and just do the main color? i was hesitant of that bc the most common color is "black/white," and lumping in the most common with other colors seemed off idk
-
-#the way that we have it right now causes a massive spike in the density plot around 1600 occurances which seems like a problem so theres a very high chance this part will change a lot tbh
-
-#honestly the solution might just be to not change it at all ugh
-
-col_occurances <- 
-aac_b %>%
-  group_by(Color) %>%
-  summarise(Color.Occurances=n())
-
-aac_c <-
-  aac_b %>%
-  left_join(col_occurances, by = "Color") %>%
-  mutate(Color=case_when(
-    Color.Occurances<1600 ~ str_extract(Color, "^[A-Za-z]+"),
-    Color.Occurances>=1600 ~ Color
-  )) %>%
-  select(-c(Color.Occurances))
-
-aac_c %>%
-  group_by(Color) %>%
-  summarise(n=n()) %>%
-  ggplot(aes(x=n)) +
-  geom_density(fill="light blue") +
-  scale_x_log10() +
-  xlab("Occurances of each unique color in data")
-
-aac_c %>%
-  group_by(Color) %>%
-  summarise(n=n()) %>%
-  summarise(unique_colors=n())
-
-aac_c %>%
-  select(Age, Breed, Color) %>%
-  head()
-```
-
-Next, note that the `Age` column is made up of character strings at the moment
-
-```{r}
-aac_c %>%
-  select(Age) %>%
+aac_c$Age %>%
   head()
 ```
 
@@ -309,26 +176,172 @@ conv_to_int <- function(string)
 }
 
 aac_c$Age.Days <- map_int(aac_c$Age, conv_to_int)
-#look i know this is slow but like whatever right??? it works idc im so tired why isnt it winter break yet
 
 aac_a <- aac_c %>%
   select(-c(Age)) %>%
   relocate(Age.Days, .before=Breed)
          
-aac_a %>%
-  select(Age.Days, Breed, Color) %>%
+aac_a$Age.Days %>%
   head()
 ```
 
-
+Now, we'll need to do some more careful combing of the data; we'll need to see which animals had intakes/outcomes occur one after the other, without alternating (basically, having two outcomes or two intakes in a row is unusual and illogical but it is present in the data)
 
 ```{r}
-#note: not to bring up problems without fixing them buttttttttttttt there are some dogs that have been in and out of the shelter like >40 times, and when analysing for adoption rates i feel like entries like that really muddy the waters. maybe its all relative and like we are only comparing dogs in the table against each other so it doesnt matter too much but idk. it might be a good idea to look at each animal ID separately and make a column for if each animal was every adopted even once and use that for analysis when looking at adoption vs breed or color or age. idk this is a problem for future me
-
-#IDEAS FOR EXPLORATORY ANALYSIS GRAPHS TO DO:
-#bar graphs with explanatory var on x (breed, color, age, etc) and stacked bars with adoption and non-adoption outcomes or adopted and non-adopted dogs
-#look at distribution of age and time between actions
-#more ideas here
+aac_d %>%
+  arrange(Animal.ID, DateTime) %>%
+  select(Animal.ID, Action, DateTime, Type) %>%
+  head()
 ```
 
+To help with this part of the cleaning, we'll be adding a column that will specify how long each intake/outcome lasted (in seconds) until the next one for each animal. For the first intake/outcome for an animal, an NA will be in the column. Additionally, we will be adding a column for how many actions the animal has undergone up to the point of that entry.
 
+```{r}
+len <- function(d1, d2)
+{
+  retval <- int_length(interval(d1, d2))
+  return(retval)
+}
+
+aac_dd <-
+aac_d %>%
+  arrange(Animal.ID, DateTime) %>%
+  group_by(Animal.ID) %>%
+  mutate(Num.Action=row_number()) %>%
+  ungroup() %>%
+  mutate(Time.From.Last.Action=case_when(
+    (Num.Action > 1) ~ len(lag(DateTime), DateTime)
+  ))
+
+aac_dd %>%
+  select(Animal.ID, Action, Time.From.Last.Action, Num.Action) %>%
+  head()
+```
+
+With that, we can simply remove all cases of duplicate entries (i.e. the time from the last action is 0 and it is the same action as the last)
+
+```{r}
+aac_f <-
+  aac_dd %>%
+  filter((Time.From.Last.Action!=0) | (lag(Action)!=Action) | Num.Action==1) %>%
+  arrange(Animal.ID, DateTime) %>%
+  mutate(Consecutive=((lag(Action)==Action) & (Num.Action!=1)))
+```
+
+Now, there are only 69 "consecutive" entries left after filtering; that is to say, 69 entries that are an `outcome` right after an `outcome` or an `intake` right after an `intake` in the `Action` column. Seeing as our table has over 160,000 entries at the moment, just for the sake of analysis, we will be simply removing these entries from the table.
+
+```{r}
+#11/25 NOTE: I DONT KNOW IF THIS IS THE RIGHT THING TO DO; NEED TO ASK MILES ABT IT
+aac_r <-
+  aac_f  %>%
+  filter(!(Consecutive)) %>%
+  select(-c(Consecutive))
+```
+
+# Section 2.1: Univariate Exploratory Analysis
+
+## Breed
+
+To start, we'll be looking at the `Breed` column.
+
+It currently has the problem of being a bit too specific, where some breeds are unmixed, some are just labeled "Mix" while others have the breed mix specified, among other naming specifics; this leads to a large majority of the breed categories having <10 entries.
+
+```{r}
+aac_r %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  ggplot(aes(x=n)) +
+  geom_density(fill="light blue") +
+  scale_x_log10() +
+  xlab("Occurances of each unique breed in data")
+
+aac_r %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  summarise(breeds=n())
+```
+
+In order for our analysis to be a bit more useful, it will helpful to create less breed categories; we will be removing any "mix" labels and specifying all dogs by their primary breed.
+
+```{r}
+aac_b <- aac_r %>% 
+  mutate(Breed=str_extract(Breed, "^[A-Za-z ]+")) %>% 
+  mutate(Breed=str_replace(Breed, " Mix", ""))
+
+aac_b %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  ggplot(aes(x=n)) +
+  geom_density(fill="light blue") +
+  scale_x_log10() +
+  xlab("Occurances of each unique breed in data")
+
+aac_b %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  summarise(breeds=n())
+
+aac_b %>%
+  select(Age, Breed, Color) %>%
+  head()
+```
+
+While there are still some breeds that show up <10 times, they now make up a minority of the data, and our analysis will be far more useful.
+
+Let's look at the distribution of breeds in the data after modification.
+
+```{r}
+aac_a %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  ggplot(aes(x=fct_rev(fct_reorder(Breed, n)), y=n)) + geom_col(fill="light blue", color="black")  +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Appearances in Data") +
+  ggtitle("breeds vs how often they appear in the data")
+```
+
+The distribution of breeds throughout the data appears *very* right skewed, so there are a small number of breeds that show up far more than any others. Let's look at those at the top:
+
+```{r}
+aac_a %>%
+  group_by(Breed) %>%
+  summarise(appearances=n()) %>%
+  arrange(desc(appearances)) %>%
+  head(10)
+```
+
+[ADD SOURCES FOR THIS PART]
+Unsuprisingly, Pit Bulls appear most often in the data, appearing in 24,799 entries out of 163,450 total entries (i.e. nearly a sixth). Pit Bulls are very common in animal shelters, since they tend to have a hard time finding owners due to the aggressive and dangerous reputation of the breed, and they are often abandoned by their owners for the same reason. Retrievers are not far behind Pit Bulls, however dogs of the breed are far more numerous than Pit Bulls, which can account for their many occurances in the data.
+
+[MORE ANALYSIS OF BREED STUFF HERE, IM JUST TOO TIRED TO DO IT RN]
+
+
+[this is all tentative:]
+## Age
+
+[stuff]
+
+## Color
+
+[stuff]
+
+## Time from last Action
+
+[stuff]
+
+## Action Type
+
+[stuff]
+
+
+# Section 2.2: Multivariate Exploratory Analysis
+
+[stuff]
+
+# Section 3: Data Modeling
+
+[stuff]
+
+# Conclusion
+
+[stuff]
