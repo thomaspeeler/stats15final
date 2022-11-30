@@ -186,16 +186,13 @@ aac$Age.Days %>%
   head()
 ```
 
-Now, we'll need to do some more careful combing of the data; we'll need to see which animals had intakes/outcomes occur one after the other, without alternating (basically, having two outcomes or two intakes in a row is unusual and illogical but it is present in the data)
+Then, we'll simply remove all duplicate entries in our dataset.
 
 ```{r}
-aac %>%
-  arrange(Animal.ID, DateTime) %>%
-  select(Animal.ID, Action, DateTime, Type) %>%
-  head()
+aac <- aac[!(duplicated(aac)), ]
 ```
 
-To help with this part of the cleaning, we'll be adding a column that will specify how long each intake/outcome lasted (in seconds) until the next one for each animal. For the first intake/outcome for an animal, an NA will be in the column. Additionally, we will be adding a column for how many actions the animal has undergone up to the point of that entry.
+Lastly, we'll be implementing a new column to denote the time between the last action and the one in the entry. The first entry for each dog will have an `NA` in this column.
 
 ```{r}
 len <- function(d1, d2)
@@ -203,7 +200,6 @@ len <- function(d1, d2)
   retval <- int_length(interval(d1, d2))
   return(retval)
 }
-
 aac <-
 aac %>%
   arrange(Animal.ID, DateTime) %>%
@@ -212,31 +208,11 @@ aac %>%
   ungroup() %>%
   mutate(Time.From.Last.Action=case_when(
     (Num.Action > 1) ~ len(lag(DateTime), DateTime)
-  ))
-
+  )) %>%
+  select(-c(Num.Action))
 aac %>%
-  select(Animal.ID, Action, Time.From.Last.Action, Num.Action) %>%
+  select(Animal.ID, Action, Time.From.Last.Action) %>%
   head()
-```
-
-With that, we can simply remove all cases of duplicate entries (i.e. the time from the last action is 0 and it is the same action as the last)
-
-```{r}
-aac <-
-  aac %>%
-  filter((Time.From.Last.Action!=0) | (lag(Action)!=Action) | Num.Action==1) %>%
-  arrange(Animal.ID, DateTime) %>%
-  mutate(Consecutive=((lag(Action)==Action) & (Num.Action!=1)))
-```
-
-Now, there are only 69 "consecutive" entries left after filtering; that is to say, 69 entries that are an `outcome` right after an `outcome` or an `intake` right after an `intake` in the `Action` column. Seeing as our table has over 160,000 entries at the moment, just for the sake of analysis, we will be simply removing these entries from the table.
-
-```{r}
-#11/25 NOTE: I DONT KNOW IF THIS IS THE RIGHT THING TO DO; NEED TO ASK MILES ABT IT
-aac <-
-  aac  %>%
-  filter(!(Consecutive)) %>%
-  select(-c(Consecutive, Num.Action))
 ```
 
 # Section 2.1: Univariate Exploratory Analysis
@@ -313,15 +289,93 @@ aac %>%
 
 Unsurprisingly, Pit Bulls appear most often in the data, appearing in 24,799 entries out of 163,450 total entries (i.e. nearly a sixth). Pit Bulls are very common in animal shelters, since they tend to have a hard time finding owners due to the aggressive and dangerous reputation of the breed, and they are often abandoned by their owners for the same reason. Retrievers are not far behind Pit Bulls, however dogs of the breed are far more numerous than Pit Bulls, which can account for their many occurrences in the data.
 
+## Action Type
 
+Let's look at the distribution of action types in the data.
 
-While 
+```{r}
+aac %>%
+  ggplot(aes(x=Type)) +
+  geom_bar(fill="light blue", color="black") + 
+  facet_wrap(~ Action, scale="free_x") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 
-[this is all tentative:]
+n_o <- (filter(aac, Action=="outcome") %>% summarise(n=n()))[1,1]
+n_i <- (filter(aac, Action=="intake") %>% summarise(n=n()))[1,1]
+
+aac %>%
+  filter(Action=="outcome") %>%
+  group_by(Type) %>%
+  summarise(percent_of_outcomes=round((n()/n_o)*100, 2))
+
+aac %>%
+  filter(Action=="intake") %>%
+  group_by(Type) %>%
+  summarise(percent_of_intakes=round((n()/n_i)*100, 2))
+```
+
+We can see that almost 50% of the dogs that leave the shelter are adopted, and well over 50% that enter are strays. Considering the findings from our analysis of the `Breed` column, it may be interesting to facet further by `Breed` comparing Pit Bulls and Retrievers, since they both appear very frequently in the data but likely for different reasons.
+
+```{r}
+aac %>%
+  filter(Breed %in% c("Pit Bull", "Labrador Retriever")) %>%
+  ggplot(aes(x=Type)) +
+  geom_bar(fill="light blue", color="black") + 
+  facet_grid(Breed ~ Action, scale="free_x") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+n_o_r <- (filter(aac, Action=="outcome", Breed=="Labrador Retriever") %>% summarise(n=n()))[1,1]
+n_i_r <- (filter(aac, Action=="intake", Breed=="Labrador Retriever") %>% summarise(n=n()))[1,1]
+n_o_p <- (filter(aac, Action=="outcome", Breed=="Pit Bull") %>% summarise(n=n()))[1,1]
+n_i_p <- (filter(aac, Action=="intake", Breed=="Pit Bull") %>% summarise(n=n()))[1,1]
+
+aac %>%
+  filter(Action=="outcome", Breed %in% c("Labrador Retriever", "Pit Bull")) %>%
+  group_by(Type) %>%
+  summarise(percent_of_outcomes_LR=round((sum(Breed=="Labrador Retriever")/n_o_r)*100, 2),
+            percent_of_outcomes_PB=round((sum(Breed=="Pit Bull")/n_o_p)*100, 2))
+
+aac %>%
+  filter(Action=="intake", Breed %in% c("Labrador Retriever", "Pit Bull")) %>%
+  group_by(Type) %>%
+  summarise(percent_of_intakes_LR=round((sum(Breed=="Labrador Retriever")/n_i_r)*100, 2),
+            percent_of_intakes_PB=round((sum(Breed=="Pit Bull")/n_i_p)*100, 2))
+```
+
+Indeed, while about 53% of Retrievers' outcomes are adoptions, only about 43% of Pit Bulls' outcomes are adoptions: a difference of 10%! Conversely, "return to owner" for Retrievers was 10% greater than that for Pit Bulls. 
+
+Additionally, while the actual difference is only about 3%, the percentage of outcomes for Pit Bulls that were euthanasia is around 2.5 times greater than that for Retrievers. All of these differences can be attributed to the aggressive reputation that Pit Bulls carry (or, in some cases such as euthanasia, the aggressive temperament they have).
 
 ## Age
 
-[stuff]
+Let's look at the distribution of ages throughout the data.
+
+```{r}
+aac %>%
+  ggplot(aes(x=Age.Days)) + 
+  geom_histogram(fill="light blue", color="black", bins=20) +
+  xlab("age in days") +
+  ggtitle("distribution of ages in days in the data")
+```
+
+The ages are certainly right-skewed, but it may be useful to dig deeper. The age may be somewhat dependent on what is happening to the dog, so we'll facet by `Type` and see if it's any different.
+
+```{r}
+aac %>%
+  ggplot(aes(x=Age.Days)) + 
+  geom_histogram(fill="light blue", color="black", bins=20) +
+  xlab("age in days") +
+  ggtitle("distribution of ages in days in the data") +
+  facet_wrap(~ Type, scales="free")
+```
+
+The only distribution that is not right-skewed is `Euthanasia Request`, reflecting how the one of the main reasons older dogs come in is for euthanasia; many dogs come into the shelter because the owner loses or abandons them, and this is more likely to happen if the dog is younger, since they have more energy they are more likely to run away or the owner may feel that they cannot take care of them. 
+
+It may be useful to bin the dogs' ages in categories for later. A numerical distribution may better help us understand how to bin them.
+
+```{r}
+quantile(aac$Age.Days, na.rm=TRUE)
+```
 
 ## Color
 
@@ -331,22 +385,18 @@ While
 
 [stuff]
 
-## Action Type
-
-[stuff]
-
-
 # Section 2.2: Multivariate Exploratory Analysis
 
 ## Breed vs Time Spent in Shelter
 
-It may be interesting to see if certain breeds spend more time in the shelter than others before being adopted.
+It may be interesting to see if certain breeds spend more time in the shelter than others before being adopted. Since we will be taking an average of the time the breed spends in the shelter, we will only be looking at breeds with at least 15 adoption entries.
 
 ```{r}
 aac %>%
   filter(!(is.na(Time.From.Last.Action))) %>%
   filter(Action=="outcome", Type=="Adoption") %>%
   group_by(Breed) %>%
+  filter(n()>=15) %>%
   summarise(a=mean(Time.From.Last.Action)) %>%
   ggplot(aes(x=fct_rev(fct_reorder(Breed, a)), y=a)) + geom_col(fill="light blue", color="black")  +
   theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
@@ -354,23 +404,40 @@ aac %>%
   ggtitle("breeds vs time spent in shelter before adoption")
 ```
 
-We still see a right skew, though not as intensely. There are some that stick out, so let's look at the ones at the top.
+We see a skew, though not as intensely as the distribution of breeds throughout the data. There are some that stick out, so let's look at the ones at the top.
 
 ```{r}
 aac %>%
   filter(!(is.na(Time.From.Last.Action))) %>%
   filter(Action=="outcome", Type=="Adoption") %>%
   group_by(Breed) %>%
-  summarise(avg_time_before_adoption=mean(Time.From.Last.Action)) %>%
-  arrange(desc(avg_time_per_intake)) %>%
+  summarise(avg_days_before_adoption=mean(Time.From.Last.Action)/86400) %>%
+  arrange(desc(avg_days_before_adoption)) %>%
   head(10)
 ```
 
-While the "Dogo Argentino" may seem random, its appearance actually closely resembles that of a Pit Bull.
+If you're unfamiliar with dog breeds then the `Dogo Argentino` may seem random, but its appearance actually closely resembles that of a Pit Bull.
 
 ![a Dogo Argentino on the left, and a Pit Bull on the right](./dogoargentino.jpg)
 
 While the two breeds are actually not related genetically, they are often mistaken for each other. Thus, it suffers from the same bad rap that the Pit Bull has of being a dangerous breed. **In fact, 9/10 of the breeds in that top 10 are relatives of the Pit Bull, or breeds that look similar**. Only the Beauceron looks distinct from a Pit Bull, and it likely has such a high average time because it looks similar to the Doberman, another breed with an "aggressive" reputation.
+
+Looking into the breeds at the tail end of the graph may give us some insight, as well.
+
+```{r}
+aac %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Breed) %>%
+  filter(n()>=15) %>%
+  summarise(avg_days_before_adoption=mean(Time.From.Last.Action)/86400) %>%
+  arrange((avg_days_before_adoption)) %>%
+  head(10)
+```
+
+dwnjankjnwanda people like cute dogs holllyyyyy shittttttttttttt
+
+sorry its late and im passing out ill write something here later but the point is that all of thtese dogs that get adopted quickly are small and/or look cute, the largest i think is the cocker spaniel but that has funny looking ears so its cute
 
 # Section 3: Data Modeling
 
