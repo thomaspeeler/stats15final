@@ -313,19 +313,9 @@ aac %>%
 
 Unsurprisingly, Pit Bulls appear most often in the data, appearing in 24,799 entries out of 163,450 total entries (i.e. nearly a sixth). Pit Bulls are very common in animal shelters, since they tend to have a hard time finding owners due to the aggressive and dangerous reputation of the breed, and they are often abandoned by their owners for the same reason. Retrievers are not far behind Pit Bulls, however dogs of the breed are far more numerous than Pit Bulls, which can account for their many occurrences in the data.
 
-It may be interesting to see if certain breeds spend more time in the shelter than others. We will be use `Time.From.Last.Action` column to make a graph.
 
-```{r}
-aac %>%
-  filter(!(is.na(Time.From.Last.Action))) %>%
-  group_by(Breed) %>%
-  summarise(a=mean(Time.From.Last.Action)) %>%
-  ggplot(aes(x=fct_rev(fct_reorder(Breed, a)), y=a)) + geom_col(fill="light blue", color="black")  +
-  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
-  ylab("Avg Time Spent in Center") +
-  ggtitle("breeds vs time spent in shelter")
-```
 
+While 
 
 [this is all tentative:]
 
@@ -348,7 +338,39 @@ aac %>%
 
 # Section 2.2: Multivariate Exploratory Analysis
 
-[stuff]
+## Breed vs Time Spent in Shelter
+
+It may be interesting to see if certain breeds spend more time in the shelter than others before being adopted.
+
+```{r}
+aac %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Breed) %>%
+  summarise(a=mean(Time.From.Last.Action)) %>%
+  ggplot(aes(x=fct_rev(fct_reorder(Breed, a)), y=a)) + geom_col(fill="light blue", color="black")  +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Avg Time Spent in Center") +
+  ggtitle("breeds vs time spent in shelter before adoption")
+```
+
+We still see a right skew, though not as intensely. There are some that stick out, so let's look at the ones at the top.
+
+```{r}
+aac %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Breed) %>%
+  summarise(avg_time_before_adoption=mean(Time.From.Last.Action)) %>%
+  arrange(desc(avg_time_per_intake)) %>%
+  head(10)
+```
+
+While the "Dogo Argentino" may seem random, its appearance actually closely resembles that of a Pit Bull.
+
+![a Dogo Argentino on the left, and a Pit Bull on the right](./dogoargentino.jpg)
+
+While the two breeds are actually not related genetically, they are often mistaken for each other. Thus, it suffers from the same bad rap that the Pit Bull has of being a dangerous breed. **In fact, 9/10 of the breeds in that top 10 are relatives of the Pit Bull, or breeds that look similar**. Only the Beauceron looks distinct from a Pit Bull, and it likely has such a high average time because it looks similar to the Doberman, another breed with an "aggressive" reputation.
 
 # Section 3: Data Modeling
 
