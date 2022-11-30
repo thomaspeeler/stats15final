@@ -112,8 +112,8 @@ i1 <- intakes_s %>%
          "Type"="Intake.Type")
 i1$Action <- "intake"
 
-aac_b <- rbind(o1, i1) %>% arrange(Animal.ID)
-aac_b %>%
+aac <- rbind(o1, i1) %>% arrange(Animal.ID)
+aac %>%
   select(Age, Breed, Color) %>%
   head()
 ```
@@ -126,30 +126,31 @@ Now, there is some cleaning to do in the `Type` column: some outcome/intake type
 + `Stolen` is the same as `Lost`.
 
 ```{r}
-aac_t <-
-  aac_b %>%
+aac <-
+  aac %>%
   mutate(Type=case_when(
     Type=="Rto-Adopt" ~ "Return to Owner",
     Type=="Stolen" ~ "Lost",
     Type=="Disposal" ~ "Died",
-    Type %in% c("Wildlife", "Abandoned") ~ "Stray"
+    Type %in% c("Wildlife", "Abandoned") ~ "Stray",
+    Type==Type ~ Type
   ))
 ```
 
 Then, we'll use `lubridate` to add a column for all of the `DateTime` values converted to `date` instead of `char` objects, which will make it easier to compare them.
 
 ```{r}
-aac_d <- aac_t
-aac_d$DateTime <- mdy_hms(aac_d$DateTime)
+aac <- aac
+aac$DateTime <- mdy_hms(aac$DateTime)
 
-aac_d$DateTime %>%
+aac$DateTime %>%
   head(3)
 ```
 
 Next, note that the `Age` column is made up of character strings at the moment.
 
 ```{r}
-aac_c$Age %>%
+aac$Age %>%
   head()
 ```
 
@@ -175,20 +176,20 @@ conv_to_int <- function(string)
   return(as.integer(ret_int*tmp))
 }
 
-aac_c$Age.Days <- map_int(aac_c$Age, conv_to_int)
+aac$Age.Days <- map_int(aac$Age, conv_to_int)
 
-aac_a <- aac_c %>%
+aac <- aac %>%
   select(-c(Age)) %>%
   relocate(Age.Days, .before=Breed)
          
-aac_a$Age.Days %>%
+aac$Age.Days %>%
   head()
 ```
 
 Now, we'll need to do some more careful combing of the data; we'll need to see which animals had intakes/outcomes occur one after the other, without alternating (basically, having two outcomes or two intakes in a row is unusual and illogical but it is present in the data)
 
 ```{r}
-aac_d %>%
+aac %>%
   arrange(Animal.ID, DateTime) %>%
   select(Animal.ID, Action, DateTime, Type) %>%
   head()
@@ -203,8 +204,8 @@ len <- function(d1, d2)
   return(retval)
 }
 
-aac_dd <-
-aac_d %>%
+aac <-
+aac %>%
   arrange(Animal.ID, DateTime) %>%
   group_by(Animal.ID) %>%
   mutate(Num.Action=row_number()) %>%
@@ -213,7 +214,7 @@ aac_d %>%
     (Num.Action > 1) ~ len(lag(DateTime), DateTime)
   ))
 
-aac_dd %>%
+aac %>%
   select(Animal.ID, Action, Time.From.Last.Action, Num.Action) %>%
   head()
 ```
@@ -221,8 +222,8 @@ aac_dd %>%
 With that, we can simply remove all cases of duplicate entries (i.e. the time from the last action is 0 and it is the same action as the last)
 
 ```{r}
-aac_f <-
-  aac_dd %>%
+aac <-
+  aac %>%
   filter((Time.From.Last.Action!=0) | (lag(Action)!=Action) | Num.Action==1) %>%
   arrange(Animal.ID, DateTime) %>%
   mutate(Consecutive=((lag(Action)==Action) & (Num.Action!=1)))
@@ -232,10 +233,10 @@ Now, there are only 69 "consecutive" entries left after filtering; that is to sa
 
 ```{r}
 #11/25 NOTE: I DONT KNOW IF THIS IS THE RIGHT THING TO DO; NEED TO ASK MILES ABT IT
-aac_r <-
-  aac_f  %>%
+aac <-
+  aac  %>%
   filter(!(Consecutive)) %>%
-  select(-c(Consecutive))
+  select(-c(Consecutive, Num.Action))
 ```
 
 # Section 2.1: Univariate Exploratory Analysis
@@ -247,7 +248,7 @@ To start, we'll be looking at the `Breed` column.
 It currently has the problem of being a bit too specific, where some breeds are unmixed, some are just labeled "Mix" while others have the breed mix specified, among other naming specifics; this leads to a large majority of the breed categories having <10 entries.
 
 ```{r}
-aac_r %>%
+aac %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   ggplot(aes(x=n)) +
@@ -255,7 +256,7 @@ aac_r %>%
   scale_x_log10() +
   xlab("Occurances of each unique breed in data")
 
-aac_r %>%
+aac %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   summarise(breeds=n())
@@ -264,11 +265,11 @@ aac_r %>%
 In order for our analysis to be a bit more useful, it will helpful to create less breed categories; we will be removing any "mix" labels and specifying all dogs by their primary breed.
 
 ```{r}
-aac_b <- aac_r %>% 
+aac <- aac %>% 
   mutate(Breed=str_extract(Breed, "^[A-Za-z ]+")) %>% 
   mutate(Breed=str_replace(Breed, " Mix", ""))
 
-aac_b %>%
+aac %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   ggplot(aes(x=n)) +
@@ -276,13 +277,13 @@ aac_b %>%
   scale_x_log10() +
   xlab("Occurances of each unique breed in data")
 
-aac_b %>%
+aac %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   summarise(breeds=n())
 
-aac_b %>%
-  select(Age, Breed, Color) %>%
+aac %>%
+  select(Age.Days, Breed, Color) %>%
   head()
 ```
 
@@ -291,7 +292,7 @@ While there are still some breeds that show up <10 times, they now make up a min
 Let's look at the distribution of breeds in the data after modification.
 
 ```{r}
-aac_a %>%
+aac %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   ggplot(aes(x=fct_rev(fct_reorder(Breed, n)), y=n)) + geom_col(fill="light blue", color="black")  +
@@ -303,20 +304,31 @@ aac_a %>%
 The distribution of breeds throughout the data appears *very* right skewed, so there are a small number of breeds that show up far more than any others. Let's look at those at the top:
 
 ```{r}
-aac_a %>%
+aac %>%
   group_by(Breed) %>%
   summarise(appearances=n()) %>%
   arrange(desc(appearances)) %>%
   head(10)
 ```
 
-[ADD SOURCES FOR THIS PART]
-Unsuprisingly, Pit Bulls appear most often in the data, appearing in 24,799 entries out of 163,450 total entries (i.e. nearly a sixth). Pit Bulls are very common in animal shelters, since they tend to have a hard time finding owners due to the aggressive and dangerous reputation of the breed, and they are often abandoned by their owners for the same reason. Retrievers are not far behind Pit Bulls, however dogs of the breed are far more numerous than Pit Bulls, which can account for their many occurances in the data.
+Unsurprisingly, Pit Bulls appear most often in the data, appearing in 24,799 entries out of 163,450 total entries (i.e. nearly a sixth). Pit Bulls are very common in animal shelters, since they tend to have a hard time finding owners due to the aggressive and dangerous reputation of the breed, and they are often abandoned by their owners for the same reason. Retrievers are not far behind Pit Bulls, however dogs of the breed are far more numerous than Pit Bulls, which can account for their many occurrences in the data.
 
-[MORE ANALYSIS OF BREED STUFF HERE, IM JUST TOO TIRED TO DO IT RN]
+It may be interesting to see if certain breeds spend more time in the shelter than others. We will be use `Time.From.Last.Action` column to make a graph.
+
+```{r}
+aac %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  group_by(Breed) %>%
+  summarise(a=mean(Time.From.Last.Action)) %>%
+  ggplot(aes(x=fct_rev(fct_reorder(Breed, a)), y=a)) + geom_col(fill="light blue", color="black")  +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Avg Time Spent in Center") +
+  ggtitle("breeds vs time spent in shelter")
+```
 
 
 [this is all tentative:]
+
 ## Age
 
 [stuff]
