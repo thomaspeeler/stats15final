@@ -379,7 +379,97 @@ quantile(aac$Age.Days, na.rm=TRUE)
 
 ## Color
 
-[stuff]
+The 'Color' column includes some interesting data. While some occurrences are just single colors (i.e. "White" or "Black") many are combinations, (i.e. "White/Tan" or "Black/White"). Sometimes colors appear in reverse order (i.e. "Black/White" and "White/Black). The distinction between these two cases isn't made clear, but for our purposes we will assume the first color to be dominant. 
+
+In order to simplify the data, we will be removing the second color from any combinations which appear less than 50 times in the data. Additionally, combinations of the same color (i.e. "White/White") will be reduced to one color. Finally, we will be excluding any colors that appear less than 10 times in the data.
+
+```{r}
+
+aac_color <- aac %>%
+  
+  mutate(a=str_extract(Color, "^.+?(?=/|$)"),
+         b=str_extract(Color, "[^/]*$")) %>%
+  mutate(Color=case_when(
+    a==b ~ a,
+    a!=b ~ Color
+  ))%>%
+  
+  group_by(Color) %>%
+  mutate(n=n()) %>%
+  
+ # mutate(Color=case_when(
+ #   n <= 50 ~ a
+ # ))  %>%
+  
+  select(-c(a,b)) %>%
+  
+#for now just filtering out anything less than 50, but would like to do the above part eventually
+  
+  filter(n>=50)
+
+aac_color %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  arrange(desc(n))
+
+```
+
+Now, when we look at the distribution, we can see that the majority of colors appear around 100-200 times in the data. There are some colors, however, that appear significantly more than others. All 10 of the most common colors appear over 5000 times. In order to investigate further, we will check to see if these colors have any relationship with breeds.
+
+```{r}
+
+aac_color %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  ggplot(aes(x=n)) +
+  geom_density(fill="light blue") +
+  scale_x_log10() +
+  xlab("Occurances of each unique color in data")
+
+aac_color %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  arrange(desc(n)) %>%
+  head(10)
+
+```
+
+The most common color, "Black/White" appears almost 20000 times. We will look at that color specifically to see the most common breed types for Black/White dogs. 
+
+```{r}
+
+breed_percentage <- aac %>%
+  count(Breed) %>%
+  arrange(desc(n)) %>%
+  mutate(total=sum(n)) %>%
+  mutate(percentage_total = (n/total)*100) %>%
+  select(Breed, percentage_total)
+
+aac_color %>%
+  filter(Color=="Black/White") %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  filter(n>250) %>%
+  
+  inner_join(breed_percentage, by = "Breed") %>%
+  mutate(n_vs_percent = n/percentage_total) %>%
+  
+  #To ensure proper proportional evaluation
+  
+  arrange(desc(n_vs_percent)) %>%
+  head(10)
+
+aac %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  arrange(desc(n)) %>%
+  head(10)
+
+```
+
+We can see that of the most common Black/White breeds (found by placing their occurrences against their percentages of all dogs), 7 appear in the most common breeds for the entire dataset.
+
+(Maybe some more visualization idk)
 
 ## Time from last Action
 
@@ -438,6 +528,124 @@ aac %>%
 dwnjankjnwanda people like cute dogs holllyyyyy shittttttttttttt
 
 sorry its late and im passing out ill write something here later but the point is that all of thtese dogs that get adopted quickly are small and/or look cute, the largest i think is the cocker spaniel but that has funny looking ears so its cute
+
+## Color vs Time in Shelter
+
+```{r}
+
+aac_color %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Color) %>%
+  filter(n()>=50) %>%
+  summarise(a=mean(Time.From.Last.Action/86400)) %>%
+  ggplot(aes(x=fct_rev(fct_reorder(Color, a)), y=a)) + geom_col(fill="light blue", color="black")  +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Avg Days Spent in Center") +
+  ggtitle("Color vs Days Spent in Shelter Before Adoption")
+
+```
+
+The skew for time spent in shelter before adoption isn't nearly as intense for color as it was for breed. 
+
+```{r}
+
+colors <- aac_color %>%
+  select(Color, n) %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  arrange(desc(n))
+
+sum(colors$n)
+
+aac_color %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  mutate(color_percentage = (n/160639)*100) %>%
+  group_by(Color, color_percentage) %>%
+  summarise(avg_days_before_adoption=mean(Time.From.Last.Action)/86400) %>%
+  arrange(desc(avg_days_before_adoption)) %>%
+  head(10)
+
+aac_color %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  mutate(color_percentage = (n/160639)*100) %>%
+  arrange(desc(color_percentage)) %>%
+  select(Color, color_percentage) %>%
+  head(10)
+
+#dont know why it does that r console thing, I know its because im doing group by wrong but im only doing it because I wanna include other columns
+
+```
+What we do notice is that none of the 10 colors with the longest time until adoption appear in the 10 most common colors. In fact, the majority of these colors make up less than 0.5% of all colors. We will take the approach we used early when evaluating color alone to detect whether or not any of these colors are common for breeds with long adoption times.
+
+```{r}
+
+aac_color %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Color) %>%
+  mutate(n=n()) %>%
+  ungroup() %>%
+  group_by(Breed) %>%
+  mutate(avg_days_before_adoption=mean(Time.From.Last.Action)/86400) %>%
+  ungroup() %>%
+  
+  group_by(Breed, Color, avg_days_before_adoption, n) %>%
+  summarise(avg_days=mean(avg_days_before_adoption)) %>%
+  
+  # I know this is the ugliest code ever and just doesn't make sense but its the only way I could figure it out.
+  
+  ungroup() %>%
+  group_by(Breed) %>%
+  slice_max(n, n=1) %>%
+  arrange(desc(avg_days_before_adoption)) %>%
+  select(Breed, Color) %>%
+  rename(most_common_color = Color)
+  head(10)
+
+```
+Interestingly, none of the breeds with the longest adoption times' most common color is any of the colors with the longest adoption times. Perhaps dogs with bizarre or abnormal colors have a harder time being adopted.
+
+```{r}
+
+aac_color %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  mutate(color_percentage = (n/160639)*100) %>%
+  group_by(Color, color_percentage) %>%
+  summarise(avg_days_before_adoption=mean(Time.From.Last.Action)/86400) %>%
+  arrange(desc(color_percentage)) %>%
+  head(10) %>%
+  ungroup() %>%
+  summarise(common_colors_avg_days = mean(avg_days_before_adoption))
+
+
+
+```
+Dogs with the most common colors are adopted on average in 27 days, while the colors with the longest adoption times all sit above 40 days. While the difference isn't huge, it is worth considering as to whether or not people are more likely to adopt dogs with common colors than those with abnormal combinations.
+
+#Age vs. Time in Shelter
+
+```{r}
+
+aac %>%
+  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  mutate(days_before_adoption=Time.From.Last.Action/86400) %>%
+  mutate(age_years = Age.Days/365) %>%
+  select(age_years, days_before_adoption) %>%
+  ggplot(aes(x=age_years,y=days_before_adoption)) +
+  geom_point() 
+
+```
+alright im dead 
+
+sorry this shit hard like im confused
+ill get on more soon
+
+also thought u were doing the bins thing for age so i ma just stop
 
 # Section 3: Data Modeling
 
