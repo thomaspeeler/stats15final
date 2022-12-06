@@ -4,8 +4,6 @@ output:
   pdf_document: default
 date: "2022-12-08"
 ---
-FEEL FREE TO CHANGE ANYTHING UP HERE IN THE INTRODUCTION
-
 IMPORTANT: WHEN PUSHING TO GITHUB, DONT COMMIT TO MAIN!!!!! MAKE A BRANCH!!!
 IF YOU DONT KNOW HOW, READ HERE: https://docs.github.com/en/get-started/quickstart/github-flow
 
@@ -47,15 +45,9 @@ The importance of this data lies in the fact that it not only identifies charact
 
 ***Color***: (char) the dog’s primary and secondary color (if it has one); the one or two main colors that make up its coat
 
-***DateTime***: (char) the date and time of the intake/outcome
-
 ### Response Variable
 
-***Intake.Type*** and ***Outcome.Type***: (char)  the specifics of the intake/outcome situation for the dog, which are: 
-
-outcomes: Adoption, Return to Owner, Transfer (moved to a rescue shelter), Euthanasia, Rto-Adopt (returned to the original owner through the adopotion process), Died, Disposal (same as died), Missing (the dog was lost at the center), and Stolen
-
-intakes: Stray, Owner Surrender, Public Assist (the dog was brought to the shelter by an outside rescue org), Abandoned (there was a confirmed past owner that has abandoned the dog), Euthanasia Request (from the owner or otherwise), and Wildlife (same as stray)
+***Outcome.Type***: (char)  the specifics of the intake/outcome situation for the dog; we will be looking only at adoptions, and specifically, how long it takes before dogs are adopted from the shelter.
 
 # Section 2: Data Loading and Cleaning
 
@@ -64,6 +56,11 @@ library(tidyverse)
 library(ggplot2)
 library(lubridate)
 library(forcats)
+library(rlang)
+library(knitr)
+library(rsample)
+library(broom)
+library(scales)
 ```
 
 First, we load our data in.
@@ -154,14 +151,14 @@ aac$Age %>%
   head()
 ```
 
-Such a variable will be much easier to analyse as an integer, so we will convert these to integers representing the dog's age in days.
+Such a variable will be much easier to analyse as an integer, so we will convert these to doubles representing the dog's age in years.
 
 ```{r}
-conv_to_int <- function(string)
+conv_to_num <- function(string)
 {
   conv <- data.frame(
     c("week", "month", "year"),
-    c(7, 30, 365)
+    c(7.0, 30.0, 365.0)
   )
   tmp <- 1
   for (n in (1:3))
@@ -172,17 +169,18 @@ conv_to_int <- function(string)
     } 
   }
   ret_str <- str_extract(string, "^[0-9]+")
-  ret_int <- as.integer(ret_str)
-  return(as.integer(ret_int*tmp))
+  ret_dub <- as.double(ret_str)
+  return(round((ret_dub*tmp)/365.0, 3))
 }
 
-aac$Age.Days <- map_int(aac$Age, conv_to_int)
+aac$Age.New <- map_dbl(aac$Age, conv_to_num)
 
 aac <- aac %>%
   select(-c(Age)) %>%
-  relocate(Age.Days, .before=Breed)
+  rename("Age"="Age.New") %>%
+  relocate(Age, .before=Breed)
          
-aac$Age.Days %>%
+aac$Age %>%
   head()
 ```
 
@@ -192,7 +190,7 @@ Then, we'll simply remove all duplicate entries in our dataset.
 aac <- aac[!(duplicated(aac)), ]
 ```
 
-Lastly, we'll be implementing a new column to denote the time between the last action and the one in the entry. The first entry for each dog will have an `NA` in this column.
+Lastly, we'll be implementing a new column to denote the time between the last action and the one in the entry; this will be our response variable, specifically for adoptions. The first entry for each dog will have an `NA` in this column.
 
 ```{r}
 len <- function(d1, d2)
@@ -206,12 +204,12 @@ aac %>%
   group_by(Animal.ID) %>%
   mutate(Num.Action=row_number()) %>%
   ungroup() %>%
-  mutate(Time.From.Last.Action=case_when(
-    (Num.Action > 1) ~ len(lag(DateTime), DateTime)
+  mutate(Days.From.Last.Action=case_when(
+    (Num.Action > 1) ~ len(lag(DateTime), DateTime)/86400
   )) %>%
   select(-c(Num.Action))
 aac %>%
-  select(Animal.ID, Action, Time.From.Last.Action) %>%
+  select(Animal.ID, Action, Days.From.Last.Action) %>%
   head()
 ```
 
@@ -259,7 +257,7 @@ aac %>%
   summarise(breeds=n())
 
 aac %>%
-  select(Age.Days, Breed, Color) %>%
+  select(Age, Breed, Color) %>%
   head()
 ```
 
@@ -352,55 +350,274 @@ Let's look at the distribution of ages throughout the data.
 
 ```{r}
 aac %>%
-  ggplot(aes(x=Age.Days)) + 
+  ggplot(aes(x=Age)) + 
   geom_histogram(fill="light blue", color="black", bins=20) +
-  xlab("age in days") +
-  ggtitle("distribution of ages in days in the data")
+  xlab("age") +
+  ggtitle("distribution of ages in the data")
 ```
 
-The ages are certainly right-skewed, but it may be useful to dig deeper. The age may be somewhat dependent on what is happening to the dog, so we'll facet by `Type` and see if it's any different.
+The ages are certainly right-skewed, but it may be useful to dig deeper. The distribution of ages may change depending on what is happening to the dog, so we'll facet by `Type` and see if it's any different.
 
 ```{r}
 aac %>%
-  ggplot(aes(x=Age.Days)) + 
+  ggplot(aes(x=Age)) + 
   geom_histogram(fill="light blue", color="black", bins=20) +
-  xlab("age in days") +
-  ggtitle("distribution of ages in days in the data") +
+  xlab("age") +
+  ggtitle("distribution of ages in the data") +
   facet_wrap(~ Type, scales="free")
 ```
 
-The only distribution that is not right-skewed is `Euthanasia Request`, reflecting how the one of the main reasons older dogs come in is for euthanasia; many dogs come into the shelter because the owner loses or abandons them, and this is more likely to happen if the dog is younger, since they have more energy they are more likely to run away or the owner may feel that they cannot take care of them. 
+It seems as though almost all of the facets are also right skewed, except for `Euthanasia Request`. this could reflect how every other intake/outcome is far more likely to happen to younger dogs; younger dogs are more likely to be abandoned or run away, and are also more likely to be adopted. However, dogs can become sick or unsuitable for care at any point in their life, and thus need to be euthanized at any age. Interestingly, the `Euthanasia` outcome is right skewed unlike the `Euthanasia Request` intake, however the plot also shows that there are far more dogs that are euthanised than are requested to be euthanized by the owner. Thus, many euthanasia outcomes are likely from strays that were picked up early in their life, but not early enough before they got rabies or some other disease.
 
-It may be useful to bin the dogs' ages in categories for later. A numerical distribution may better help us understand how to bin them.
+It may be useful to bin the dogs' ages in categories for later. Some numerical and visual distribution may better help us understand how to bin them.
 
 ```{r}
-quantile(aac$Age.Days, na.rm=TRUE)
+quantile(aac$Age, na.rm=TRUE)
+ggplot(aac, aes(x=Age)) +
+  geom_boxplot(na.rm=TRUE) +
+  xlab("Age in Years")
 ```
+
+The American Kennel Club considers dogs to be adults once they reach one year old, and seniors once they reach 10 years of age. However, in our data, there are a small number of dogs that are 10 years or older, so binning them by puppy-adult-elderly would not be terribly helpful to out analysis; in fact, any dog older than 6 years old is considered an outlier. Instead, we can group them by puppy-adolescent-adult, reflecting the changes that younger dogs go through while also allowing each bin to have a good amount of dogs. So, we'll say that puppies are 0-1 years old, adolescents are 1-3, adults are 3 or older.
+
+```{r}
+aac <-
+  aac %>%
+  mutate(Age.Bin=case_when(
+    Age<1 ~ "puppy",
+    Age<3 ~ "adolescent",
+    Age>=3 ~ "adult"
+  ))
+head(aac$Age.Bin)
+
+aac %>% 
+  drop_na(Age.Bin) %>%
+  group_by(Age.Bin) %>% 
+  summarise(n=n()) %>%
+  ggplot(aes(x=Age.Bin, y=n, fill=Age.Bin)) +
+  geom_col(color="black", width=0.5) +
+  xlab("Age") +
+  ylab("Occurences in Data") +
+  scale_fill_discrete(name="Age")
+```
+
+With this distribution, we have a good amount of dogs in each bin, while still being separated by age in a meaningful way.
 
 ## Color
 
-[stuff]
+The 'Color' column includes some interesting data. While some occurrences are just single colors (i.e. "White" or "Black") many are combinations, (i.e. "White/Tan" or "Black/White"). Sometimes colors appear in reverse order (i.e. "Black/White" and "White/Black). The distinction between these two cases isn't made clear, but for our purposes we will assume the first color to be dominant. 
 
-## Time from last Action
+In order to simplify the data, we will be removing the second color from any combinations which appear less than 50 times in the data. Additionally, combinations of the same color (i.e. "White/White") will be reduced to one color. Finally, we will be excluding any colors that appear less than 10 times in the data.
 
-[stuff]
+```{r}
+tmp <-
+  aac %>%
+  group_by(Color) %>%
+  summarise(n=n())
+
+aac <- aac %>%
+  inner_join(tmp, by="Color") %>%
+  mutate(a=str_extract(Color, "^.+?(?=/|$)"),
+         b=str_extract(Color, "[^/]*$")) %>%
+  mutate(Color=case_when(
+    n<50 ~ a,
+    a==b ~ a,
+    a!=b ~ Color
+  )) %>%
+  select(-c(a,b,n))
+
+aac %>%
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  ggplot(aes(x=n)) +
+  geom_density(fill="light blue") +
+  scale_x_log10() +
+  xlab("Occurances of each unique color in data")
+
+aac %>%
+  group_by(Color) %>%
+  summarise(occurances_in_data=n()) %>%
+  arrange(desc(occurances_in_data)) %>%
+  head(10)
+```
+
+Now, when we look at the distribution, we can see that the majority of colors appear around 100-200 times in the data. There are some colors, however, that appear significantly more than others. All 10 of the most common colors appear over 5000 times. In order to investigate further, we will check to see if these colors have any relationship with breeds.
+
+The most common color, "Black/White" appears almost 20000 times. We will look at that color specifically to see the most common breed types for Black/White dogs. 
+
+```{r}
+breed_percentage <- aac %>%
+  count(Breed) %>%
+  arrange(desc(n)) %>%
+  mutate(total=sum(n)) %>%
+  mutate(percentage_total = (n/total)*100) %>%
+  select(Breed, percentage_total)
+aac %>%
+  filter(Color=="Black/White") %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  filter(n>250) %>%
+  
+  inner_join(breed_percentage, by = "Breed") %>%
+  mutate(n_vs_percent = n/percentage_total) %>%
+  
+  #To ensure proper proportional evaluation
+  
+  arrange(desc(n_vs_percent)) %>%
+  head(10)
+aac %>%
+  group_by(Breed) %>%
+  summarise(n=n()) %>%
+  arrange(desc(n)) %>%
+  head(10)
+```
+
+We can see that of the most common Black/White breeds (found by placing their occurrences against their percentages of all dogs), 7 appear in the most common breeds for the entire dataset.
+
+(Maybe some more visualization idk)
+
+
+## Time Since Last Action
+
+First, let's look at the distribution of times before outcomes throughout the data
+
+```{r}
+aac %>%
+  filter(!(is.na(Days.From.Last.Action)) & Action=="outcome") %>%
+  ggplot(aes(x=Days.From.Last.Action)) +
+  geom_density(fill="light blue") +
+  scale_x_log10(labels=label_comma()) +
+  xlab("days before action") +
+  ggtitle("density plot of days between before any outcomes")
+```
+
+We can make some observations about this, but they frankly don't mean much if we don't specify the type of action. Let's try filtering for only adoptions.
+
+```{r}
+aac %>%
+  filter(!(is.na(Days.From.Last.Action)) & Type=="Adoption") %>%
+  ggplot(aes(x=Days.From.Last.Action)) +
+  geom_density(fill="light blue") +
+  scale_x_log10(labels=label_comma()) +
+  xlab("days before adoption") +
+  ggtitle("density plot of days between intakes and adoptions")
+```
+
+A similar trend shows up even stronger; we can see a spike of adoption times around 5-7 days, and nearly all the rest of the times are between that and 100 days. The spike seems very sudden for such a statistic, which could possibly illustrate something about the center's adoption process; perhaps most dogs need to be at the center for at least a few days before they can be put up for adoption.
+
+Let's look at the same plot, but filtered for `Euthanasia` and `Return to Owner` outcomes; they represent popular but very distinct outcomes for the dogs, and so could lend themselves to some conclusion.
+
+```{r}
+aac %>%
+  filter(!(is.na(Days.From.Last.Action)) & Type %in% c("Euthanasia", "Return to Owner")) %>%
+  ggplot(aes(x=Days.From.Last.Action)) +
+  geom_density(fill="light blue") +
+  scale_x_log10(labels=label_comma()) +
+  xlab("days before action") +
+  ggtitle("density plot of days before euthanasia and RTO") +
+  facet_wrap(~ Type)
+```
+
+A unique trend appears in both of these plots, in the form of a small bump close to 0 days. This likely reflects how both of these outcomes are typically not dependent on other people; that is to say, the center can usually figure out a dog's owner and return them or deem a stray as necessary for euthanasia very soon after the intake. However, adoptions are dependent on the dog actually being adopted, which, at a point, the center has no control over.
+
+This column will serve as our response variable, so more analysis of it will be in the next section.
 
 # Section 2.2: Multivariate Exploratory Analysis
 
-## Breed vs Time Spent in Shelter
+## Age vs Time Before Adoption
+
+It feels obvious that dogs that are younger would get adopted quicker (they're cuter, they will probably live for longer, etc), but let's see if that trend reveals itself in the data.
+
+```{r}
+aac %>%
+  filter(Type=="Adoption", !(is.na(Days.From.Last.Action))) %>%
+  mutate(Age=round(Age)) %>%
+  group_by(Age) %>%
+  summarise(a=mean(Days.From.Last.Action)) %>%
+  ggplot(aes(x=Age, y=a)) + 
+  geom_col(color="black", fill="light blue") +
+  ylab("Mean time before adoption in days") +
+  xlab("Age in years") +
+  ggtitle("Time between intake and adoption vs Age in years")
+```
+
+While there does seem to be an upward trend up until the 12-year-old dogs, it should be noted that there are few entries of dogs that are older than 5 or 6 in the data, and those entries would be considered outliers for age, as seen in the analysis of the `Age` column. Let's limit the plot to dogs that are 6 or younger to get a better picture of what this distribution would normally look like.
+
+```{r}
+aac %>%
+  filter(Type=="Adoption", !(is.na(Days.From.Last.Action))) %>%
+  filter(Age<=6) %>%
+  mutate(Age=round(Age)) %>%
+  group_by(Age) %>%
+  summarise(a=mean(Days.From.Last.Action)) %>%
+  ggplot(aes(x=Age, y=a)) + 
+  geom_col(color="black", fill="light blue") +
+  ylab("Mean time before adoption in days") +
+  xlab("Age in years") +
+  ggtitle("Time between intake and adoption vs Age in years")
+```
+
+While a a left skew still holds up, we do see a slight plateu from 3-years-old and onwards. This could very well reflect how dogs tend to reach mid-adolescence around 2-3 years old; they seem to stop looking like puppies and look more like adults around this age.
+
+## Color vs Time Before Adoption
+
+First, let's see how each breed compares to each other for their mean time before adoption.
+
+```{r}
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Color) %>%
+  filter(n()>=15) %>%
+  summarise(a=mean(Days.From.Last.Action)) %>%
+  ggplot(aes(x=fct_rev(fct_reorder(Color, a)), y=a)) + 
+  geom_col(fill="light blue", color="black")  +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Mean Time Spent in Center in Days") +
+  ggtitle("colors vs time spent in shelter before adoption")
+```
+
+While there are no colors that stick out, there's seems to be a trend, as some colors have clearly longer mean times than others. Let's look at those at the tail and head.
+
+```{r}
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Color) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange(desc(mean_days_before_adoption)) %>%
+  head(10)
+
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Color) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange((mean_days_before_adoption)) %>%
+  head(10)
+```
+
+While it may be hard to draw conclusions from colors alone, it may be illuminating to see if these colors correlate with certain breeds, thus revealing the breed to be what is causing the trend here.
+
+```{r}
+#im working on this dont mind me
+```
+
+## Breed vs Time Before Adoption
 
 It may be interesting to see if certain breeds spend more time in the shelter than others before being adopted. Since we will be taking an average of the time the breed spends in the shelter, we will only be looking at breeds with at least 15 adoption entries.
 
 ```{r}
 aac %>%
-  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
   filter(Action=="outcome", Type=="Adoption") %>%
   group_by(Breed) %>%
   filter(n()>=15) %>%
-  summarise(a=mean(Time.From.Last.Action)) %>%
-  ggplot(aes(x=fct_rev(fct_reorder(Breed, a)), y=a)) + geom_col(fill="light blue", color="black")  +
+  summarise(a=mean(Days.From.Last.Action)) %>%
+  ggplot(aes(x=fct_rev(fct_reorder(Breed, a)), y=a)) + 
+  geom_col(fill="light blue", color="black")  +
   theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
-  ylab("Avg Time Spent in Center") +
+  ylab("Avg Time Spent in Center in Days") +
   ggtitle("breeds vs time spent in shelter before adoption")
 ```
 
@@ -408,11 +625,11 @@ We see a skew, though not as intensely as the distribution of breeds throughout 
 
 ```{r}
 aac %>%
-  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
   filter(Action=="outcome", Type=="Adoption") %>%
   group_by(Breed) %>%
-  summarise(avg_days_before_adoption=mean(Time.From.Last.Action)/86400) %>%
-  arrange(desc(avg_days_before_adoption)) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange(desc(mean_days_before_adoption)) %>%
   head(10)
 ```
 
@@ -426,22 +643,219 @@ Looking into the breeds at the tail end of the graph may give us some insight, a
 
 ```{r}
 aac %>%
-  filter(!(is.na(Time.From.Last.Action))) %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
   filter(Action=="outcome", Type=="Adoption") %>%
   group_by(Breed) %>%
   filter(n()>=15) %>%
-  summarise(avg_days_before_adoption=mean(Time.From.Last.Action)/86400) %>%
-  arrange((avg_days_before_adoption)) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange((mean_days_before_adoption)) %>%
   head(10)
 ```
 
-dwnjankjnwanda people like cute dogs holllyyyyy shittttttttttttt
+Another trend can be seen in the tail end of the graph: all of these breeds that tend to get adopted quickest could be classified as "small", and tend to look cute.
 
-sorry its late and im passing out ill write something here later but the point is that all of thtese dogs that get adopted quickly are small and/or look cute, the largest i think is the cocker spaniel but that has funny looking ears so its cute
+![a Wire Hair Fox Terrier, a dog breed often compared to a stuffed animal](./wirehairfoxterrier.jpg)
+
+In hindsight, it may be unsurprising that the cuteness of a dog influences how quickly it gets adopted, though to see this trend manifest so strongly in our data like this is still useful.
+
+It may be interesting to see if our distribution is different if we factor in the age bins we created earlier; for younger dogs, the breed may not matter as much as for older dogs.
+
+```{r}
+for(b in c("puppy", "adolescent", "adult"))
+{
+print(
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  group_by(Breed) %>%
+  filter(n()>=15) %>%
+  ungroup() %>%
+  filter(Action=="outcome", Type=="Adoption", Age.Bin==b) %>%
+  group_by(Breed) %>%
+  summarise(a=mean(Days.From.Last.Action)) %>%
+  ggplot(aes(x=fct_rev(fct_reorder(Breed, a)), y=a)) + 
+  geom_col(fill="light blue", color="black")  +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Avg Time Spent in Center") +
+  ggtitle(paste("\"", b, "\" age breeds vs mean time before adoption", sep=""))
+)
+}
+```
+
+From the graphs, the distributions all seem the same as before filtering for age. Let's see if the head or tail of the graphs are any different.
+
+```{r}
+for(b in c("puppy", "adolescent", "adult"))
+{
+print(
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption", Age.Bin==b) %>%
+  group_by(Breed) %>%
+  filter(n()>=10) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange(desc(mean_days_before_adoption)) %>%
+  head(10) %>%
+  kable(caption=b)
+)
+}
+```
+
+Confirming our earlier analysis of age vs time before adoption, dogs that are younger tend to get adopted much faster than those that are older. However, the top dogs, as it were, in each age category appear to be different than when we did not categorise by age. While the `adolescent` and `adult` categories look fairly similar to our uncategorised table, as the Pit Bull and its relatives occupy most of the spots, the `puppy` category is notable. 
+
+While the American Staffordshire Terrier, American Pit Bull Terrier, and Staffordshire are Pit Bull relatives, the rest of the breeds don't seem to have such an obvious explanation. The American Foxhound, the puppy breed that tends to take the *longest* to be adopted, is an average looking, mild-mannered dog that is usually very good with children and families. Additionally, the Shih Tzu and Mini Poodle are often lauded as being exceptionally cute dog breeds, which one would think is even moreso when the dog is a puppy, but they both appear to take longer, on average, than other puppy breeds to be adopted.
+
+![a Shih Tzu puppy and Mini Poodle puppies](./shihtzupoodle.png)
+
+To be honest, I have no confident explanation for this. I can only assume that the only reason dogs such as Shih Tzus find themselves in the shelter so young is because they have some fundamental problem, such as being especially aggressive or difficult to train; alternatively, the strays of these breeds that come to the shelter may have been victims of the wild, and thus lose the cuteness factor that would normally mean that they are adopted quickly. Additionally, the explanation could also go in the opposite direction; the Bulldogs and Pit Bull relatives that normally spend a long time in shelter are seen as much cuter when they are puppies, and so they are adopted quicker if they are young but as they mature, they look more intimidating and so are adopted less.
+
+There isn't any more analysis to do here and I think this explanation is long enough, so let's now turn to the breeds that *do* get adopted quickly.
+
+```{r}
+for(b in c("puppy", "adolescent", "adult"))
+{
+print(
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption", Age.Bin==b) %>%
+  group_by(Breed) %>%
+  filter(n()>=10) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange((mean_days_before_adoption)) %>%
+  head(10) %>%
+  kable(caption=b)
+)
+}
+```
+
+Once again, while our `adolescent` and `adult` tables look similar to that that are uncategorised, the `puppy` table looks notable. While not all of these dogs are particularly small or cute, most of them are actually rather rare breeds in the US. While most dogs look cute as puppies and don't start to really show the features of their breed until they are older, adoptors are likely enticed by the fact that a breed is rare. To illustrate, let's look at how many of each breed have ever been present at the center. We'll be removing duplicate `Animal.ID`s since we just want to look at each individual dog's breed, and not count a single dog multiple times. Another table denoting the occurrences of the most common breeds is provided to compare.
+
+```{r}
+tmp <-
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption", Age.Bin=="puppy") %>%
+  group_by(Breed) %>%
+  filter(n()>=10) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange((mean_days_before_adoption)) %>%
+  head(10)
+
+ad <- 
+  aac %>%
+  filter(Breed %in% tmp$Breed)
+ad <- 
+  ad[!duplicated(ad$Animal.ID),]
+ad <-
+  ad %>%
+  group_by(Breed) %>%
+  summarise(dogs_with_breed=n())
+
+inner_join(tmp, ad, by="Breed")
+
+ad2 <- 
+  aac[!duplicated(aac$Animal.ID),]
+ad2 %>%
+  group_by(Breed) %>%
+  summarise(dogs_with_breed=n()) %>%
+  arrange(desc(dogs_with_breed)) %>%
+  head(10)
+  
+```
+
+While breeds such as the Cocker Spaniel don't appear to be exceptionally rare, especially compared to something like the Petite Basset Griffon Vendéen (or Pbgv), the American Kennel Club notes that they are still highly desireable for their gentle attitude and beauty as a breed.
+
+![an adult Cocker Spaniel](./cockerspaniel.jpg)
 
 # Section 3: Data Modeling
 
-[stuff]
+For modeling, we'll be comparing variables against the mean time before being adopted. As such, we will need to modify our dataset somewhat.
+
+```{r}
+aac_m <- 
+  aac %>%
+  filter(Type=="Adoption", !(is.na(Days.From.Last.Action)))
+
+split_aac <- initial_split(aac_m, prop=0.85)
+training <- training(split_aac)
+testing <- testing(split_aac)
+```
+
+## Breed Coefficients
+
+### LM and p-values
+
+```{r}
+breed_v_time <- lm(Days.From.Last.Action~Breed, data=aac_m)
+coefs <- tidy(breed_v_time)
+tbl <- coefs[order(coefs$p.value, decreasing=FALSE), ]
+filter(tbl, p.value<=0.05)
+
+anova(breed_v_time)
+```
+
+Since Breed is categorical, there are >300 p-values in this model; we've filtered for just those that are less than p=0.05, and they're all Pit Bulls or Pit Bull relatives. Not terribly suprising, but it does highlight the low association of a dog's breed and time before adoption except in particular cases. As for its predictions, it tends to predict quite high times for these breeds, mostly in the 50-60 day range.
+
+### R-squared
+
+```{r}
+summary(breed_v_time) %>%
+  glance() %>%
+  pull(r.squared) %>%
+  round(3)
+```
+
+0.06 is quite a small R-squared value, but let's see how it stacks up to our other variables.
+
+## Age Coefficients
+
+```{r}
+age_v_time <- lm(Days.From.Last.Action~Age, data=aac_m)
+summary(age_v_time)
+
+summary(age_v_time) %>%
+  glance() %>%
+  pull(r.squared) %>%
+  round(3)
+```
+
+While we have a very small p-value, indicating a relationship between our independent and response variables, our R-squared value is also quite low, reflecting quite a bit of variability in adoption times when comparing them to ages.
+
+## Color
+
+```{r}
+#um i need james part for this so wip?
+```
+
+## Full Model
+
+```{r}
+full_model <-
+  lm(Days.From.Last.Action~Breed+Age+Color, data=training)
+coefs <- tidy(full_model)
+tbl <- coefs[order(coefs$p.value, decreasing=FALSE), ]
+filter(tbl, p.value<=0.05)
+
+anova(full_model)
+
+full_model %>%
+  glance() %>%
+  pull(r.squared) %>%
+  round(3)
+```
+
+Despite very low p-values, our overall R-squared is only 0.159, which, while higher than for the variables on their own, is still very low. However, the p-values still tell us that there is a relationship between our variables.
+
+## Full Model Testing
+
+```{r}
+tmp <-
+testing %>%
+  filter(Breed %in% training$Breed, Color %in% training$Color)
+
+tmp %>%
+  mutate(pred=predict(full_model, tmp))
+```
+
 
 # Conclusion
 
