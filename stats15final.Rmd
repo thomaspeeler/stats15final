@@ -559,49 +559,6 @@ aac %>%
 
 While a a left skew still holds up, we do see a slight plateu from 3-years-old and onwards. This could very well reflect how dogs tend to reach mid-adolescence around 2-3 years old; they seem to stop looking like puppies and look more like adults around this age.
 
-## Color vs Time Before Adoption
-
-First, let's see how each breed compares to each other for their mean time before adoption.
-
-```{r}
-aac %>%
-  filter(!(is.na(Days.From.Last.Action))) %>%
-  filter(Action=="outcome", Type=="Adoption") %>%
-  group_by(Color) %>%
-  filter(n()>=15) %>%
-  summarise(a=mean(Days.From.Last.Action)) %>%
-  ggplot(aes(x=fct_rev(fct_reorder(Color, a)), y=a)) + 
-  geom_col(fill="light blue", color="black")  +
-  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
-  ylab("Mean Time Spent in Center in Days") +
-  ggtitle("colors vs time spent in shelter before adoption")
-```
-
-While there are no colors that stick out, there's seems to be a trend, as some colors have clearly longer mean times than others. Let's look at those at the tail and head.
-
-```{r}
-aac %>%
-  filter(!(is.na(Days.From.Last.Action))) %>%
-  filter(Action=="outcome", Type=="Adoption") %>%
-  group_by(Color) %>%
-  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
-  arrange(desc(mean_days_before_adoption)) %>%
-  head(10)
-
-aac %>%
-  filter(!(is.na(Days.From.Last.Action))) %>%
-  filter(Action=="outcome", Type=="Adoption") %>%
-  group_by(Color) %>%
-  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
-  arrange((mean_days_before_adoption)) %>%
-  head(10)
-```
-
-While it may be hard to draw conclusions from colors alone, it may be illuminating to see if these colors correlate with certain breeds, thus revealing the breed to be what is causing the trend here.
-
-```{r}
-#im working on this dont mind me
-```
 
 ## Breed vs Time Before Adoption
 
@@ -766,6 +723,78 @@ While breeds such as the Cocker Spaniel don't appear to be exceptionally rare, e
 
 ![an adult Cocker Spaniel](./cockerspaniel.jpg)
 
+## Color vs Time Before Adoption
+
+First, let's see how each color compares to each other for their mean time before adoption.
+
+```{r}
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Color) %>%
+  filter(n()>=15) %>%
+  summarise(a=mean(Days.From.Last.Action)) %>%
+  ggplot(aes(x=fct_rev(fct_reorder(Color, a)), y=a)) + 
+  geom_col(fill="light blue", color="black")  +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Mean Time Spent in Center in Days") +
+  ggtitle("colors vs time spent in shelter before adoption")
+```
+
+While there are no colors that stick out, there's seems to be a trend, as some colors have clearly longer mean times than others. Let's look at those at the tail and head.
+
+```{r}
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Color) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange(desc(mean_days_before_adoption)) %>%
+  head(10)
+
+aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Action=="outcome", Type=="Adoption") %>%
+  group_by(Color) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange((mean_days_before_adoption)) %>%
+  head(10)
+```
+
+While it may be hard to draw conclusions from colors alone, it may be illuminating to see if these colors correlate with certain breeds, thus revealing the breed to be what is causing the trend here.
+
+```{r}
+tmp <-
+  aac %>%
+  filter(!(is.na(Days.From.Last.Action))) %>%
+  filter(Type=="Adoption") %>%
+  group_by(Color) %>%
+  summarise(mean_days_before_adoption=mean(Days.From.Last.Action)) %>%
+  arrange(desc(mean_days_before_adoption)) %>%
+  head(10)
+
+tmp2 <-
+aac %>%
+  filter(Color %in% tmp$Color) %>%
+  group_by(Breed, Color) %>%
+  summarise(n=n())
+
+tmp3 <-
+  aac %>%
+  filter(Color %in% tmp$Color) %>%
+  group_by(Breed, Color) %>%
+  summarise(n=n()) %>%
+  ungroup() %>%
+  group_by(Color) %>%
+  summarise(n=max(n))
+
+#i know. you dont have to tell me. sometimes to do things fast means you cant do them pretty.
+
+left_join(tmp3, tmp2, by=c("Color", "n"))
+```
+
+While Pit Bulls are very present in the data regardless of color, some colors that are almost unique to them, such as `Blue Tiger`, are associated with longer adoption times than most other colors. It feels safe to say that color itself has minimal effect on adoption times, and the real impact is coming from the dog's breed (...that being Pit Bull).
+
 # Section 3: Data Modeling
 
 For modeling, we'll be comparing variables against the mean time before being adopted. As such, we will need to modify our dataset somewhat.
@@ -785,7 +814,7 @@ testing <- testing(split_aac)
 ### LM and p-values
 
 ```{r}
-breed_v_time <- lm(Days.From.Last.Action~Breed, data=aac_m)
+breed_v_time <- lm(Days.From.Last.Action~Breed, data=training)
 coefs <- tidy(breed_v_time)
 tbl <- coefs[order(coefs$p.value, decreasing=FALSE), ]
 filter(tbl, p.value<=0.05)
@@ -793,7 +822,7 @@ filter(tbl, p.value<=0.05)
 anova(breed_v_time)
 ```
 
-Since Breed is categorical, there are >300 p-values in this model; we've filtered for just those that are less than p=0.05, and they're all Pit Bulls or Pit Bull relatives. Not terribly suprising, but it does highlight the low association of a dog's breed and time before adoption except in particular cases. As for its predictions, it tends to predict quite high times for these breeds, mostly in the 50-60 day range.
+Since Breed is categorical, there are >300 p-values in this model; we've filtered for just those that are less than p=0.05, and they're all Pit Bulls or Pit Bull relatives. Not terribly surprising, but it does highlight the low association of a dog's breed and time before adoption except in particular cases. As for its predictions, it tends to predict quite high times for these breeds, mostly in the 50-60 day range.
 
 ### R-squared
 
@@ -804,12 +833,41 @@ summary(breed_v_time) %>%
   round(3)
 ```
 
-0.06 is quite a small R-squared value, but let's see how it stacks up to our other variables.
+0.06 is quite a small R-squared value, indicating high variability in adoption times that is unexplained by the dog's Breed, but let's see how it stacks up to our other variables.
+
+## Color
+
+### LM and p-values
+
+```{r}
+color_v_time <- lm(Days.From.Last.Action~Color, data=training)
+coefs <- tidy(color_v_time)
+tbl <- coefs[order(coefs$p.value, decreasing=FALSE), ]
+#filter(tbl, p.value<=0.05)
+head(tbl, 5)
+
+anova(color_v_time)
+```
+
+While the overall p-value for Color is very small, individual p-values for colors are all quite large, with only one less than 0.1. It was noted that any trend seen in the colors of the dogs could likely be attributed to certain colors being more common with certain breeds, so it tracks that color on its own would not have a terribly strong relationship to adoption times.
+
+There is little point in analysing the coefficients for this variable, as the other statistics tell us that any estimate would likely be inaccurate.
+
+### R-squared
+
+```{r}
+summary(color_v_time) %>%
+  glance() %>%
+  pull(r.squared) %>%
+  round(3)
+```
+
+An R-squared of 0.017 is, frankly, miniscule, going along with the fact that color and adoption times did not seem to have a very strong relationship at all, as shown by the p-values.
 
 ## Age Coefficients
 
 ```{r}
-age_v_time <- lm(Days.From.Last.Action~Age, data=aac_m)
+age_v_time <- lm(Days.From.Last.Action~Age, data=training)
 summary(age_v_time)
 
 summary(age_v_time) %>%
@@ -818,13 +876,7 @@ summary(age_v_time) %>%
   round(3)
 ```
 
-While we have a very small p-value, indicating a relationship between our independent and response variables, our R-squared value is also quite low, reflecting quite a bit of variability in adoption times when comparing them to ages.
-
-## Color
-
-```{r}
-#um i need james part for this so wip?
-```
+While we have a very small p-value, indicating a relationship between our independent and response variables, our R-squared value is also quite low, reflecting quite a bit of variability in adoption times when comparing them to ages. The coefficients tell us that the model predicts an increase in adoption time of about 7 days for each year older a dog is.
 
 ## Full Model
 
@@ -843,7 +895,7 @@ full_model %>%
   round(3)
 ```
 
-Despite very low p-values, our overall R-squared is only 0.159, which, while higher than for the variables on their own, is still very low. However, the p-values still tell us that there is a relationship between our variables.
+The p-value for Color appears to be quite a bit greater than that for Breed and Age, though it was already noted that the relationship between adoption times and color is exceedingly weak. Our overall R-squared is only 0.159, which, while higher than for the variables on their own, is still very low. However, the low p-values still tell us that there is a relationship present between our variables; albeit, a relationship that is likely quite weak, as only about 16% of variability in adoption times is explained by the variables.
 
 ## Full Model Testing
 
@@ -852,11 +904,75 @@ tmp <-
 testing %>%
   filter(Breed %in% training$Breed, Color %in% training$Color)
 
+pred_test <-
 tmp %>%
-  mutate(pred=predict(full_model, tmp))
+  mutate(prediction=predict(full_model, tmp),
+         diff=abs(Days.From.Last.Action-prediction)) %>%
+  select(Breed, Days.From.Last.Action, prediction, diff)
+
+head(pred_test)
+
+summarise(pred_test, diff_mean=mean(diff),
+          testing_sd=sd(Days.From.Last.Action),
+          stddevs=diff_mean/testing_sd)
+
 ```
 
+The mean of the difference between our model's predictions and the true adoption times for our testing data was about 30 days, which was within 0.45 standard deviations of the testing data's adoption times.
+
+While that may seem like a low number of std. deviations, we think this model could fit a bit better to certain parts the data than others.
+
+## Fitting to Subsets
+
+We seemed to have the best fit with certain breeds in the dataset, so let's try subsetting and see if we get a better fit. Those breeds that worked the best were those that were related to the Pit Bull, so we'll just test on those breeds.
+
+```{r}
+t_breeds <- c("Dogo Argentino", "Pit Bull", "Staffordshire", "American Staffordshire Terrier", "American Pit Bull Terrier", "American Bulldog", "Bulldog")
+
+aac_p <-
+aac_m %>%
+  filter(Breed %in% t_breeds)
+
+split_aac_p <- initial_split(aac_p, prop=0.85)
+training_p <- training(split_aac_p)
+testing_p <- testing(split_aac_p)
+
+model_p <- lm(Days.From.Last.Action~Breed+Age+Color, data=training_p)
+coefs_p <- tidy(model_p)
+tbl_p <- coefs[order(coefs_p$p.value, decreasing=FALSE), ]
+filter(tbl_p, p.value<=0.05)
+
+anova(model_p)
+
+model_p %>%
+  glance() %>%
+  pull(r.squared) %>%
+  round(3)
+```
+
+While our R-squared was greater (though negligably), our p-value for breed went up, indicating that there is less confidence in the relationship between breed and adoption times. This makes sense considering that, when filtering to only breeds that, coincidentally, tend to have greater adoption times, any sort of relationship becomes less clear; however, the variance in the times becomes lesser, relfecting the increased R-squared value.
 
 # Conclusion
 
-[stuff]
+## Insights
+
+Overall, our models were largely unsuccessful in being useful for predictive purposes. They do give us insight, however; the low (<0.15) R-squared values despite low p-values indicate that, while a relationship is certainly present in the variables, it is very weak, and a large majority of the variance in the data is unaccounted for.
+
+The most likely reason for this outcome is the small span of our variables when trying to answer quite a complex question. There are far more forces at play besides the attributes of the dog itself when one considers adopting, which would span far beyond the scope of this dataset (i.e. the kind of place or economic situation that would allow for people to own pets).
+
+Additionally, it is worth noting that the rather large size of the dataset likely contributed to those low p-values. With enough data points, a trend became apparent, albeit a rather weak trend, illustrated by our also low R-squared values.
+
+## Improvments
+
+Pairing this dataset with others could likely lead to much deeper analysis, allowing us to consider variables beyond the scope of the Austin Animal Center itself. For example, a dataset for home prices in Austin over time could lead to interesting analysis, as the `DateTime` column in our data would allow us to see if higher home prices may lead to less adoptions; additionally, we could analyse parts besides adoption times, such as the age and breeds of the dogs coming in/out of the shelter compared to home prices.
+
+As far as our data modeling, a different, nonlinear approach may have lent itself to better results. Especially in a variable such as `Age`, as we earlier observed a plateau of adoption times after the dogs were older than 3 years old.
+
+## Reflection
+
+Despite what may seem like little substantial results in our last data modeling section, we would say that, overall, our analysis of this dataset could be considered "successful"; that is to say, we uncovered quite a few trends that in hindsight may seem somewhat obvious, but we would certainly not be able to say them with as much confidence as we do now after our analysis. Pit Bulls are known for the aggressive reputation that they carry, and thus many may not want to adopt them due to the fear of being attacked by their own dog, but to see this fact manifest so strongly within our data was still quite interesting and surprising. Even though breeds such as the Dogo Argentino and Bulldogs are, at this point, almost completely separate from Pit Bulls genetically, the fact that they are treated the same by adopters confirms the belief that looks play the biggest role in deciding which dog people will adopt (and, frankly, looks play the biggest role when people judge things, in general). This same idea applies, somewhat, to the fact that age played such a noticeable role, as well. While a younger dog may be desirable because they live for longer, "puppies" are regarded as such because they are simply seen as cuter to most adopters.
+
+While our exploratory analysis may illuminate trends in one way, our data models must not be brushed away. When considering whether the variables we analysed truly had any effect on the time taken for adoption, we confident in saying that while our variables did influence the time taken for adoption for the dogs, it was not a strong effect.
+
+
+
