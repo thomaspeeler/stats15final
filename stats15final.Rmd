@@ -446,6 +446,7 @@ Now, when we look at the distribution, we can see that the majority of colors ap
 The most common color, "Black/White" appears almost 20000 times. We will look at that color specifically to see the most common breed types for Black/White dogs. 
 
 ```{r}
+
 breed_percentage <- aac %>%
   count(Breed) %>%
   arrange(desc(n)) %>%
@@ -453,29 +454,58 @@ breed_percentage <- aac %>%
   mutate(percentage_total = (n/total)*100) %>%
   select(Breed, percentage_total)
 aac %>%
-  filter(Color=="Black/White") %>%
+  filter(Color == "Black/White") %>%
   group_by(Breed) %>%
   summarise(n=n()) %>%
   filter(n>250) %>%
   
   inner_join(breed_percentage, by = "Breed") %>%
   mutate(n_vs_percent = n/percentage_total) %>%
+  arrange(desc(n_vs_percent)) %>%
+  rename(proportional_frequency = n_vs_percent) %>%
+  head(10)
   
   #To ensure proper proportional evaluation
-  
-  arrange(desc(n_vs_percent)) %>%
-  head(10)
+
 aac %>%
+  
   group_by(Breed) %>%
   summarise(n=n()) %>%
   arrange(desc(n)) %>%
   head(10)
 ```
 
-We can see that of the most common Black/White breeds (found by placing their occurrences against their percentages of all dogs), 7 appear in the most common breeds for the entire dataset.
+We can see that of the most common Black/White breeds (found by placing their occurrences against their percentages of all dogs), 7 appear in the most common breeds for the entire dataset. Lets look at some of the other most common colors. 
 
-(Maybe some more visualization idk)
+```{r}
 
+color_percentage <- aac %>%
+  count(Color) %>%
+  mutate(total=sum(n)) %>%
+  mutate(percentage_total = (n/total)*100) %>%
+  select(Color, percentage_total)
+
+aac %>%
+  
+  group_by(Color) %>%
+  summarise(n=n()) %>%
+  filter(Color != "Tricolor") %>%
+  
+  inner_join(color_percentage, by = "Color") %>%
+  arrange(desc(percentage_total)) %>%
+  head(10) %>%
+  
+  ggplot(aes(x = Color, y = percentage_total, fill = str_extract(Color, "^.+?(?=/|$)"))) +
+  geom_col() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values=c('#424949', '#967969', '#D2B48C', '#D7DBDD')) +
+  labs(x = 'Common Colors', y = 'Percentage of Total Colors', title = 'Most Common Colors')+
+  guides(fill=guide_legend(title="Dominant Color")) 
+
+```
+
+Black/White is the largest color by a significant margin, but all 10 of the most common colors are some combination of Black, Brown, and White tones. These colors reflect the most common colors for all dogs, so there isn't anything to be inferred about their large frequency in our dataset. Color percentages in the shelter remain consistent with those typically observed outside of the shelter.
 
 ## Time Since Last Action
 
