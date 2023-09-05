@@ -474,9 +474,6 @@ aac %>%
 
 We can see that of the most common Black/White breeds (found by placing their occurrences against their percentages of all dogs), 7 appear in the most common breeds for the entire dataset.
 
-(Maybe some more visualization idk)
-
-
 ## Time Since Last Action
 
 First, let's look at the distribution of times before outcomes throughout the data
